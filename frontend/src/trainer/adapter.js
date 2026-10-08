@@ -18,14 +18,36 @@
 //   - mergePlan mints fresh ids and drops unknown routine fields, so applying an assignment is the
 //     module's own replace-in-place (stable ids, so history and progression stay attached),
 //     built on parsePlan, pushSnapshot and deleteRoutine.
+//
+// FIT-003 adds the library's needs (contract.test.js pins each):
+//   - api/apiUpload/apiBlob: JSON calls, a demo upload with progress, a demo download, all to the
+//     same base and with the same credentials as the rest of the app.
+//   - loadMediaIngest/limitsFrom: upstream's client-side media preparation (photos re-encoded on a
+//     canvas, which drops EXIF and GPS; MP4/MOV metadata zeroed; hashed; a poster made), loaded on
+//     first use as upstream's own editor loads it.
+//   - normalizeMediaRef/cleanUrl: the gates upstream's own readers use for a MediaRef and a link.
+//   - CATALOGUE/BODYPARTS/ALL_EQUIPMENT/searchExercises/exerciseNameFor/vocabText: the built-in
+//     catalogue, its vocabulary and upstream's translations of it (no new strings: vocabText is
+//     only ever handed upstream's own words, a body part or an equipment name).
+//   - UI components, so the module looks like the app.
 import { useStore } from '../store/useStore.js'
 
 export { useStore, DEF } from '../store/useStore.js'
-export { api } from '../lib/api.js'
+export { api, apiUpload, apiBlob } from '../lib/api.js'
 export { parsePlan } from '../lib/plan-share.js'
 export { pushSnapshot, revertLast, canRevert, SNAPSHOT_MAX } from '../lib/coach.js'
 export { deleteRoutine } from '../lib/routines.js'
-export { Section, Row } from '../components/ui.jsx'
+export { normalizeMediaRef, cleanUrl } from '../lib/media-refs.js'
+export { limitsFrom, fmtMB, MB } from '../lib/media-limits.js'
+export { CATALOGUE, BODYPARTS, searchExercises } from '../lib/exercises.js'
+export { ALL_EQUIPMENT } from '../lib/equipment.js'
+export { exerciseNameFor, t as vocabText } from '../lib/i18n-core.js'
+export { Section, Row, Button, Switch, TextField, TextArea, Segmented, SearchField } from '../components/ui.jsx'
+export { default as Icon } from '../components/Icon.jsx'
+
+/** Upstream's media ingest (lib/media-ingest.js: ingestMediaFile(file, limits) → { media, blobs,
+ *  warnings }), split off and loaded on first use, as CustomMediaField.jsx loads it. */
+export const loadMediaIngest = () => import('../lib/media-ingest.js')
 
 /** The key the module keeps on a routine or custom exercise it delivered:
  *  `{ by, assignmentId, rev }` (and `exId`, the trainer's stable exercise id, on a custom one). */
@@ -33,6 +55,9 @@ export const ASSIGNED = 'assigned'
 
 /** The signed-in user ({ id, name, admin }), or null for a guest or a signed-out device. */
 export const useUser = () => useStore(s => s.user)
+
+/** The server's GET /api/config answer as the store keeps it (its `media` block holds the caps). */
+export const useServerConfig = () => useStore(s => s.config)
 
 /** The profile as it stands now (the store's `S`). Read-only: change it through updateProfile. */
 export const currentProfile = () => useStore.getState().S
