@@ -2,6 +2,7 @@
 // with a copy button and its expiry), the open invites (each revocable), and the linked clients,
 // each opening #/trainer/clients/<link>.
 import { useCallback, useEffect, useState } from 'react'
+import { useRefreshOnReturn } from './useRefreshOnReturn.js'
 import { useNavigate } from 'react-router-dom'
 import { Button, Row, Section } from './adapter.js'
 import { createInvite, getInvites, revokeInvite, getLinks } from './client.js'
@@ -25,6 +26,7 @@ export default function Clients() {
     } catch { setMsg({ alert: TEXT.loadFailed }) }
   }, [])
   useEffect(() => { load() }, [load])
+  useRefreshOnReturn(load)
 
   const invite = async () => {
     setBusy(true)

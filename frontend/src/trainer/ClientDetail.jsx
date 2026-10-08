@@ -9,6 +9,7 @@
 //   - End link.
 // Every write names the revision it was based on; a 409 reloads and says so.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRefreshOnReturn } from './useRefreshOnReturn.js'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Button, Row, Section, TextArea } from './adapter.js'
 import { getAssignmentFor, saveDraft, publishDraft, getProgress, revokeLink } from './client.js'
@@ -66,6 +67,7 @@ export default function ClientDetail({ lib }) {
     try { setProgress(await getProgress(linkId)) } catch { setProgress(null) }
   }, [linkId])
   useEffect(() => { load(); loadProgress() }, [load, loadProgress])
+  useRefreshOnReturn(load, loadProgress)
 
   const current = a?.published?.length ? a.published[a.published.length - 1] : null
   const diff = useMemo(() => (a?.preview ? diffPlans(current?.snapshot || null, a.preview) : null), [a, current])
