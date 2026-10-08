@@ -5,12 +5,14 @@
 //   #/trainer                    the switch, the library and the programmes
 //   #/trainer/exercises/<id|new> one library exercise, with its demo
 //   #/trainer/programmes/<id|new> one programme
+//   #/trainer/clients/<link>     one linked client: assign, publish, progress, end (FIT-004)
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTrainerStatus } from './status.js'
 import { useTrainer } from './useTrainer.js'
 import TrainerHome from './TrainerHome.jsx'
 import ExerciseEditor from './ExerciseEditor.jsx'
 import ProgrammeEditor from './ProgrammeEditor.jsx'
+import ClientDetail from './ClientDetail.jsx'
 
 export default function TrainerRoot() {
   const status = useTrainerStatus()
@@ -26,6 +28,7 @@ function TrainerApp({ module }) {
     <Route index element={<TrainerHome module={module} {...trainer} />} />
     <Route path="exercises/:id" element={ready ? <ExerciseEditor {...trainer} /> : <Waiting cap={trainer.cap} />} />
     <Route path="programmes/:id" element={ready ? <ProgrammeEditor {...trainer} /> : <Waiting cap={trainer.cap} />} />
+    <Route path="clients/:link" element={ready ? <ClientDetail lib={trainer.lib} /> : <Waiting cap={trainer.cap} />} />
     <Route path="*" element={<Navigate to="/trainer" replace />} />
   </Routes>
 }
