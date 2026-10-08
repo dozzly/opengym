@@ -6,7 +6,13 @@ import { getExport } from './client.js'
 import Page, { Note } from './Page.jsx'
 import { TEXT } from './strings.js'
 
-const mb = bytes => Math.round((bytes / MB) * 10) / 10
+// Demo files are often a few KB (a re-encoded photo, a poster), so below 1 MB the size is in KB:
+// "0 of 500 MB" read as if the uploads had gone missing.
+export const sizeText = bytes => {
+  if (!(bytes > 0)) return '0 MB'
+  if (bytes < MB) return `${Math.max(1, Math.ceil(bytes / 1024))} KB`
+  return `${Math.round((bytes / MB) * 10) / 10} MB`
+}
 
 export default function TrainerHome({ module, cap, lib, error, setEnabled }) {
   const nav = useNavigate()
@@ -45,7 +51,7 @@ export default function TrainerHome({ module, cap, lib, error, setEnabled }) {
     </Section>}
 
     {cap?.enabled && lib && <>
-      <Section title={TEXT.exercises} footer={usage ? TEXT.usage(mb(usage.bytes), usage.quotaBytes ? mb(usage.quotaBytes) : 0) : null}>
+      <Section title={TEXT.exercises} footer={usage ? TEXT.usage(sizeText(usage.bytes), usage.quotaBytes ? sizeText(usage.quotaBytes) : null) : null}>
         {exercises.filter(e => !e.archived).map(exerciseRow)}
         <Row icon="plusCircle" title={TEXT.newExercise} onClick={() => nav('exercises/new')} />
       </Section>

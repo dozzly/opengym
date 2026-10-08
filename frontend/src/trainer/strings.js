@@ -31,7 +31,7 @@ export const TEXT = {
   withDemo: 'with demo',
   routineCount: n => (n === 1 ? '1 routine' : `${n} routines`),
   exerciseCount: n => (n === 1 ? '1 exercise' : `${n} exercises`),
-  usage: (usedMB, quotaMB) => (quotaMB ? `Demo files use ${usedMB} of ${quotaMB} MB.` : `Demo files use ${usedMB} MB.`),
+  usage: (used, quota) => (quota ? `Demo files use ${used} of ${quota}.` : `Demo files use ${used}.`),
 
   exportTitle: 'Export library',
   exportFooter: 'A file with every exercise and programme, archived ones included. Demo files are referenced, not included.',
