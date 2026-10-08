@@ -48,6 +48,15 @@ async function mount(user, path = '/trainer') {
   await settle()
 }
 const settle = async (n = 6) => { for (let i = 0; i < n; i++) await act(() => new Promise(r => setTimeout(r, 0))) }
+// Settles until `cond` holds, up to `ms`: work that goes through the in-process server (an upload
+// read, hashed and stored) can take longer than a fixed number of ticks on a slow CI runner.
+const until = async (cond, ms = 5000) => {
+  const end = Date.now() + ms
+  while (!cond()) {
+    if (Date.now() > end) throw new Error('timed out waiting for the screen to settle')
+    await settle(1)
+  }
+}
 
 /** The app's calls, answered by the module's real routes for `uid` (the harness in api/trainer/test). */
 function connect(uid) {
@@ -213,7 +222,7 @@ describe('trainer tools', () => {
     expect(Number(bar.getAttribute('value'))).toBe(pct)
     expect(text()).toContain(TEXT.uploadingPct(pct))
     release()
-    await settle()
+    await until(() => host.querySelector('progress') === null)
     expect(host.querySelector('progress')).toBeNull()
     expect(text()).toContain(TEXT.videoKind)
     expect(host.querySelector('video')?.getAttribute('src')).toBe('blob:demo')   // the preview, from the demo store
