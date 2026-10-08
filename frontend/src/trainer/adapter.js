@@ -30,7 +30,15 @@
 //     catalogue, its vocabulary and upstream's translations of it (no new strings: vocabText is
 //     only ever handed upstream's own words, a body part or an equipment name).
 //   - UI components, so the module looks like the app.
+//
+// FIT-004 adds what delivery needs (contract.test.js pins each):
+//   - toast: upstream's one toast, with an action button (the Undo after a trainer-managed apply).
+//   - useWorkoutRunning: the store's `S.active`; nothing is applied or offered mid-workout.
+//   - useProfileReady: the store's `ready`; nothing is applied before its first pull is done.
+//   - api to upstream's POST /api/media/missing and apiUpload to PUT /api/media/<hash>: a demo is
+//     copied into the client's own media folder through upstream's own upload path.
 import { useStore } from '../store/useStore.js'
+import { useUI } from '../store/useUI.js'
 
 export { useStore, DEF } from '../store/useStore.js'
 export { api, apiUpload, apiBlob } from '../lib/api.js'
@@ -65,3 +73,13 @@ export const currentProfile = () => useStore.getState().S
 /** Changes the profile through the store's own update: stamped for the merge, saved, and synced
  *  by the client's own revision machinery. The only way the module writes a client's data. */
 export const updateProfile = mut => useStore.getState().update(mut)
+
+/** Upstream's toast: `toast(msg)`, or `toast(msg, { action, onAction })` for one with a button. */
+export const toast = (msg, opts) => useUI.getState().toast(msg, opts)
+
+/** Whether a workout is running on this device. */
+export const useWorkoutRunning = () => useStore(s => !!s.S?.active)
+
+/** Whether the store has finished booting (its first pull from the server is done): before that,
+ *  the profile in hand may be older than the server's, and nothing is applied to it. */
+export const useProfileReady = () => useStore(s => !!s.ready)

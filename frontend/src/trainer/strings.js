@@ -112,6 +112,125 @@ export const TEXT = {
   },
 }
 
+/* ---------- FIT-004: links, assignments, delivery, progress ---------- */
+
+const date = ms => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+const plural = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+export const LINK_TEXT = {
+  // The client's side (#/trainer, "Your trainer")
+  yourTrainer: 'Your trainer',
+  unlinkedFooter: 'A trainer gives you a code. With it, they can see the workouts you do on the plan they send you, and send you plan updates. Nothing else of yours.',
+  code: 'Invite code',
+  codePlaceholder: 'PT-XXXXXXXXXXXX',
+  modeTitle: 'Plan updates',
+  modes: {
+    'co-managed': { label: 'Co-managed', sentence: 'You review each plan update and choose to apply it or not.' },
+    'trainer-managed': { label: 'Trainer-managed', sentence: 'Plan updates are applied as soon as they arrive, and you can undo each one.' },
+  },
+  shareBodyweight: 'Share my body weight',
+  shareBodyweightFooter: 'Off: your trainer does not see your body weight.',
+  accept: 'Accept',
+  accepted: name => `You are now linked with ${name}.`,
+  trainer: 'Trainer',
+  linkedFooter: 'Your trainer sees the workouts you do on the routines they send you, with their sets and notes. Not your other routines, photos, settings or anything else.',
+  endLink: 'End link',
+  endLinkClient: name => `End the link with ${name}? Your current plan stays: the routines they sent become ordinary routines of yours.`,
+  endLinkTrainer: name => `End the link with ${name}? You can no longer see their progress or send them updates. They keep the plan they have.`,
+  cancel: 'Cancel',
+  ended: 'The link has ended. Your plan stays as it is.',
+  acceptError: {
+    'invite-invalid': 'That is not an invite code. It looks like PT- and twelve letters and digits.',
+    'invite-unknown': 'No invite has that code. Check it with your trainer.',
+    'invite-used': 'That code has been used already. Ask your trainer for a new one.',
+    'invite-expired': 'That code has expired. Ask your trainer for a new one.',
+    'invite-revoked': 'Your trainer withdrew that code. Ask for a new one.',
+    'self-link': 'That is your own invite code.',
+    'has-trainer': 'You already have a trainer. End that link first.',
+    'trainer-unavailable': 'That trainer is not taking clients at the moment.',
+    locked: 'Too many wrong codes. Try again in an hour.',
+    other: 'That did not work. Check your connection and try again.',
+  },
+
+  // The trainer's side (#/trainer, "Clients", and #/trainer/clients/<link>)
+  clients: 'Clients',
+  inviteClient: 'Invite a client',
+  newCode: 'New invite code',
+  codeFooter: expires => `Give this code to your client. It works once, until ${date(expires)}, and is shown only now.`,
+  copy: 'Copy',
+  copied: 'Copied.',
+  copyFailed: 'Could not copy. Select the code and copy it.',
+  openInvites: 'Open invites',
+  invite: 'Invite',
+  expires: ms => `Expires ${date(ms)}`,
+  revoke: 'Revoke',
+  openInvitesFooter: 'An invite links you to whoever enters its code first.',
+  tooManyInvites: 'You have ten open invites. Revoke one first.',
+  linkedClients: 'Linked clients',
+  noClients: 'No clients yet.',
+  status: 'Status',
+  bodyweight: 'Body weight',
+  shared: 'Shared',
+  notShared: 'Not shared',
+  statusText: (published, applied) => {
+    if (!published) return 'Nothing sent yet'
+    if (!applied || applied.rev < published.rev) return `Revision ${published.rev} sent, not applied yet`
+    return applied.outcome === 'applied' ? `Revision ${applied.rev} applied` : `Revision ${applied.rev} declined`
+  },
+  assignProgramme: 'Assign programme',
+  assignFooter: 'The programme you pick is the draft. Your client gets nothing until you publish it.',
+  noProgrammes: 'Create a programme first.',
+  noteToClient: 'Note to your client',
+  notePlaceholder: 'What this plan is for, how to approach it',
+  review: 'Review and publish',
+  reviewTitle: (next, current) => (current ? `Revision ${next}, against revision ${current}` : `Revision ${next}, the first`),
+  publish: 'Publish',
+  published: rev => `Published revision ${rev}. Your client has been notified.`,
+  draftNeeded: 'Pick a programme first.',
+  unresolvedTitle: 'These exercises cannot be sent. Replace them in the programme first:',
+  unresolvedSlot: (routine, id) => `${routine}: unknown exercise (${id || 'no id'})`,
+  assignmentConflict: 'This client\'s plan changed in another tab. It has been reloaded; check and publish again.',
+  libraryChanged: 'Your library changed since this preview. It has been reloaded; check the changes again.',
+  archivedProgramme: 'That programme is archived. Restore it, or pick another.',
+  progress: 'Progress',
+  noProgress: 'No workouts on the assigned plan yet.',
+  progressFooter: 'Workouts on the routines you sent, since the link began. Read-only.',
+  ownExercise: 'An exercise of their own',
+  minutes: sec => `${Math.max(1, Math.round(sec / 60))} min`,
+  warmup: 'Warm-up',
+  rir: n => `RIR ${n}`,
+  rpe: n => `RPE ${n}`,
+  notDone: 'not done',
+  sides: (l, r) => `L ${l} / R ${r}`,
+  bodyweightOn: (w, unit) => `Body weight ${w} ${unit}`,
+
+  // The update card and the toast (TrainerInbox)
+  updateTitle: name => `${name} sent a plan update`,
+  updateFooter: 'Applying replaces the routines your trainer sent before. Your own routines, workouts, weigh-ins and settings stay as they are, and so does your week.',
+  apply: 'Apply',
+  discard: 'Discard',
+  later: 'Later',
+  applied: name => `Plan update from ${name} applied.`,
+  undo: 'Undo',
+  undone: 'Plan update undone.',
+  applyFailed: 'This update could not be applied on this device. Discard it, and ask your trainer to send it again.',
+
+  // The diff
+  noChanges: 'No changes to routines or exercises.',
+  newRoutine: name => `New routine: ${name}`,
+  removedRoutine: name => `Removed routine: ${name}`,
+  renamedFrom: from => `renamed from ${from}`,
+  newIcon: 'new icon',
+  added: names => `added ${names}`,
+  removed: names => `removed ${names}`,
+  changed: names => `sets, reps or weight changed for ${names}`,
+  reordered: 'new order',
+  newExercise: name => `New exercise: ${name}`,
+  revisedExercise: (name, from, to) => (from != null && to != null ? `Updated exercise: ${name} (revision ${from} to ${to})` : `Updated exercise: ${name}`),
+  unusedExercise: name => `No longer used: ${name}`,
+  count: (n, one, many) => plural(n, one, many),
+}
+
 /** The sentence for a refusal of the library gate (library.js LibraryError) or of the server. */
 export function invalidText(e) {
   const T = TEXT.invalid
