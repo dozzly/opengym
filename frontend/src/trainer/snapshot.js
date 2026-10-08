@@ -1,12 +1,17 @@
 // The durable snapshot of a trainer's programme, and how a client's own app puts one in place
-// (ADR 029, decision 5). FIT-003 builds and tests the core; FIT-004 delivers it (publish, the
-// client's Apply/Discard or trainer-managed apply, and the acknowledgement).
+// (ADR 029, decision 5). FIT-003 built and tested the core; FIT-004 delivers it: the server builds
+// the snapshot it publishes with its own port of snapshotProgramme (api/trainer/snapshot.js,
+// pinned to this one by snapshot-parity.test.js), and the client's app applies it here
+// (delivery.js), on its own or after the client's Apply.
 //
 // snapshotProgramme(library, programmeId) is a self-contained copy of one programme as it is now:
 // upstream-shaped routines, and every library exercise they use as a full custom-exercise snapshot
 // under its stable tx_ id (custom: true, its MediaRef, and src: { trainer, exRev }). It is a deep
 // copy, so editing, archiving or deleting the library later changes nothing in it: a client keeps
-// the exercise as it was published until the trainer publishes again.
+// the exercise as it was published until the trainer publishes again. A slot naming a built-in
+// exercise keeps the catalogue it was taken from (`catalog: 'og1'`): a published snapshot may be
+// applied long after it was taken, by an app whose catalogue has moved on, and only
+// resolveBuiltin() on that device can say what the id means there.
 //
 // applySnapshot(state, snapshot, { previousRoutineIds }) puts it into a client's profile (a draft
 // inside the store's update(), like upstream's mergePlan). Upstream's mergePlan cannot do this: it
@@ -15,7 +20,12 @@
 //   - Only routines whose ids the module recorded for the previous revision are replaced or
 //     removed, in place, keeping their ids, so the workouts logged against them and their
 //     progression stay attached. A copy the client made (copyRoutine copies the marker) and every
-//     personal routine are left alone, whatever they carry.
+//     personal routine are left alone, whatever they carry. A routine this same trainer delivered
+//     before (its id is the snapshot's and its marker names the trainer: a copy would have a new
+//     id) is replaced in place too, which is what a new link to the same trainer, or an undone
+//     revision, leaves behind.
+//   - Each built-in slot is resolved in the catalogue this app runs (resolveBuiltin); one it cannot
+//     resolve is left out and counted in `dropped`, never read as some other exercise.
 //   - The snapshot's custom exercises are upserted by id. None is ever removed, so history that
 //     names an exercise a newer revision dropped still resolves.
 //   - Nothing else is touched: workouts, weigh-ins, settings, other custom exercises, the week
@@ -27,7 +37,7 @@
 // Nothing is kept on an exercise slot: upstream's routine editor rebuilds a slot when its exercise
 // is edited, and drops what it does not know.
 import { parsePlan, deleteRoutine, ASSIGNED } from './adapter.js'
-import { EX_ID_RE, resolveBuiltin, byId } from './library.js'
+import { EX_ID_RE, resolveBuiltin, byId, CATALOGS } from './library.js'
 
 export const SNAPSHOT_FORMAT = 1
 
@@ -78,7 +88,7 @@ export function snapshotProgramme(library, programmeId, { trainer = library?.own
       }
       const builtin = resolveBuiltin({ id, catalog }, ...(catalogue ? [catalogue] : []))
       if (!builtin) { unresolved.push({ routine: r.id, index, id, catalog: catalog ?? null }); return }
-      ex.push({ id: builtin.id, ...cfg })
+      ex.push({ id: builtin.id, catalog, ...cfg })
     })
     return {
       id: r.id, name: r.name, ...(r.emoji ? { emoji: r.emoji } : {}),
@@ -98,20 +108,45 @@ export function snapshotProgramme(library, programmeId, { trainer = library?.own
 const stampsOf = o => Object.fromEntries(Object.entries(o || {}).filter(([k]) => k.startsWith('_')))
 
 /**
+ * What applying `snapshot` would write, in the unit `unit`: { routines, customEx, dropped }. Each
+ * built-in slot resolved in this app's catalogue (or left out, counted in `dropped`), then upstream's
+ * parsePlan, which checks every exercise id and converts the units. The diff a client reviews is
+ * taken against this, so it shows what Apply does.
+ */
+export function deliverable(snapshot, unit = 'kg', { catalogue } = {}) {
+  if (!snapshot || snapshot.trainer_snapshot !== SNAPSHOT_FORMAT || !Array.isArray(snapshot.routines)) throw fail('not-snapshot', 'not a trainer snapshot')
+  let unknown = 0
+  const routines = snapshot.routines.map(r => ({
+    ...r,
+    ex: (r.ex || []).flatMap(slot => {
+      if (!slot || typeof slot.catalog !== 'string') return [slot]
+      const { catalog, ...cfg } = slot
+      const builtin = Object.hasOwn(CATALOGS, catalog) ? resolveBuiltin({ id: slot.id, catalog }, ...(catalogue ? [catalogue] : [])) : null
+      if (!builtin) { unknown++; return [] }
+      return [{ ...cfg, id: builtin.id }]
+    }),
+  }))
+  const plan = parsePlan({ opengym_plan: 1, unit: snapshot.unit, routines, customEx: snapshot.customEx || [], week: {} }, unit == null ? 'kg' : unit)
+  return { routines: plan.routines, customEx: plan.customEx, dropped: plan.dropped + unknown }
+}
+
+/**
  * Puts `snapshot` into the client profile `s` (a draft: call it inside the store's update()).
  * `previousRoutineIds` are the routine ids the module recorded when it applied the previous
  * revision. Returns { routineIds, customExIds, added, replaced, removed, dropped }: record
- * `routineIds` for the next revision; `dropped` counts slots upstream's parsePlan could not
- * resolve on this device. Throws { code: 'not-snapshot' | 'id-collision' } before changing anything.
+ * `routineIds` for the next revision; `dropped` counts slots this device could not resolve.
+ * Throws { code: 'not-snapshot' | 'id-collision' } before changing anything.
  */
-export function applySnapshot(s, snapshot, { previousRoutineIds = [] } = {}) {
-  if (!snapshot || snapshot.trainer_snapshot !== SNAPSHOT_FORMAT || !Array.isArray(snapshot.routines)) throw fail('not-snapshot', 'not a trainer snapshot')
-  const plan = parsePlan({ opengym_plan: 1, unit: snapshot.unit, routines: snapshot.routines, customEx: snapshot.customEx || [], week: {} }, s.unit == null ? 'kg' : s.unit)
+export function applySnapshot(s, snapshot, { previousRoutineIds = [], catalogue } = {}) {
+  const plan = deliverable(snapshot, s.unit == null ? 'kg' : s.unit, { catalogue })
   const prev = new Set(previousRoutineIds)
   s.routines = s.routines || []
   s.customEx = s.customEx || []
+  // Delivered before by this trainer: the same id (a copy gets a new one), the trainer's marker.
+  const ours = x => x && typeof snapshot.trainer === 'string' && x[ASSIGNED]?.by === snapshot.trainer
   for (const r of plan.routines) {
-    if (s.routines.some(x => x.id === r.id) && !prev.has(r.id)) throw fail('id-collision', `routine ${r.id} is not one the module delivered`)
+    const cur = s.routines.find(x => x.id === r.id)
+    if (cur && !prev.has(r.id) && !ours(cur)) throw fail('id-collision', `routine ${r.id} is not one the module delivered`)
   }
   for (const c of plan.customEx) {
     const cur = s.customEx.find(x => x.id === c.id)

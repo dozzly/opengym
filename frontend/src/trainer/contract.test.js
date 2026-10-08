@@ -457,6 +457,17 @@ describe('FIT-003: the upstream surface the library and its UI use', () => {
     expect(adapter.CATALOGUE.find(e => e.id === SQUAT).n).toBe('barbell full squat')
   })
 
+  it('FIT-004: the server\'s og1 id list (api/trainer/catalog-og1.js) is exactly the ids of the catalogue the app takes for og1', async () => {
+    // The server has no catalogue: this list is how its snapshot tells a built-in slot it can
+    // deliver from one it cannot. og1's ids never change; this fails only if the list was edited
+    // or the app's og1 fingerprint was (and then the fingerprint test above fails too).
+    const { og1Ids, inOg1 } = await import('../../../api/trainer/catalog-og1.js')
+    expect(og1Ids()).toEqual(adapter.CATALOGUE.map(e => e.id).sort())
+    expect(catalogFingerprint(og1Ids().map(id => ({ id })))).toBe(CATALOGS.og1.fingerprints[0])
+    expect(inOg1(SQUAT)).toBe(true)
+    expect(inOg1('9999')).toBe(false)
+  })
+
   it('the catalogue\'s vocabulary and search: body parts and equipment translate, names resolve, search finds by name', () => {
     for (const b of adapter.BODYPARTS) expect(adapter.vocabText(b)).toBeTypeOf('string')
     for (const q of adapter.ALL_EQUIPMENT) expect(adapter.vocabText(q)).toBeTypeOf('string')

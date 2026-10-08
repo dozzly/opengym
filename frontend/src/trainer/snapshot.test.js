@@ -3,7 +3,7 @@
 // later library edits and archiving, and that applying it changes the trainer's routines and
 // exercises in a client's profile and nothing else, across revisions, with history attached.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { snapshotProgramme, applySnapshot, customExOf, SNAPSHOT_FORMAT } from './snapshot.js'
+import { snapshotProgramme, applySnapshot, deliverable, customExOf, SNAPSHOT_FORMAT } from './snapshot.js'
 import { DEF, useStore, updateProfile, currentProfile, ASSIGNED, CATALOGUE } from './adapter.js'
 import { mergeStates } from '../lib/sync-merge.js'
 import { copyRoutine } from '../lib/routines.js'
@@ -61,7 +61,8 @@ describe('snapshotProgramme', () => {
     const snap = snapshotProgramme(library(), TP1)
     expect(snap).toMatchObject({ trainer_snapshot: SNAPSHOT_FORMAT, opengym_plan: 1, trainer: TRAINER, programme: { id: TP1, rev: 2 }, name: 'Block 1', unit: 'kg', week: { 1: [R1], 4: [R2] }, unresolved: [] })
     expect(snap.routines).toEqual([
-      { id: R1, name: 'Lower', emoji: 'dumbbell', [ASSIGNED]: { by: TRAINER, assignmentId: TP1, rev: 2 }, ex: [{ id: TX1, sets: 3, reps: 8, weight: 20 }, { id: '0043', sets: 3, reps: 5, weight: 100 }] },
+      // A built-in slot keeps its catalogue: the device that applies it resolves it (FIT-004).
+      { id: R1, name: 'Lower', emoji: 'dumbbell', [ASSIGNED]: { by: TRAINER, assignmentId: TP1, rev: 2 }, ex: [{ id: TX1, sets: 3, reps: 8, weight: 20 }, { id: '0043', catalog: 'og1', sets: 3, reps: 5, weight: 100 }] },
       { id: R2, name: 'Core', [ASSIGNED]: { by: TRAINER, assignmentId: TP1, rev: 2 }, ex: [{ id: TX2, sets: 3, sec: 30, mode: 'time' }] },
     ])
     expect(snap.customEx.map(c => c.id)).toEqual([TX1, TX2], 'only what the routines use')
@@ -211,6 +212,44 @@ describe('applySnapshot', () => {
       expect(routine(merged, R2)?.[ASSIGNED]).toEqual({ by: TRAINER, assignmentId: TP1, rev: 3 })
       expect(routine(merged, 'r_mine')).toEqual(routine(S1, 'r_mine'))
     }
+  })
+
+  it('resolves each built-in slot in this app\'s catalogue, leaving out (and counting) one it cannot, never reading it as another', () => {
+    const snap = snapshotProgramme(library(), TP1)
+    const S = client()
+    const res = applySnapshot(S, snap)
+    expect(res.dropped).toBe(0)
+    expect(routine(S, R1).ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100 })
+    // The same snapshot on a device whose catalogue is no longer og1 (upstream v1.4.0 renumbers):
+    // the slot is not delivered as whatever '0043' means there.
+    const renumbered = CATALOGUE.map((e, i) => ({ ...e, id: String(i + 1).padStart(4, '0') }))
+    const T = client()
+    expect(applySnapshot(T, snap, { catalogue: renumbered }).dropped).toBe(1)
+    expect(routine(T, R1).ex.map(x => x.id)).toEqual([TX1])
+    // A catalogue this module does not know at all: the same.
+    const odd = clone(snap)
+    odd.routines[0].ex[1].catalog = 'og9'
+    expect(deliverable(odd, 'kg').dropped).toBe(1)
+    // A FIT-003 snapshot (no catalogue on its slots) still applies as it did.
+    const legacy = clone(snap)
+    delete legacy.routines[0].ex[1].catalog
+    expect(deliverable(legacy, 'kg').routines[0].ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100 })
+  })
+
+  it('a routine this trainer delivered before (same id, the trainer\'s marker) is replaced in place, on a new link or after an Undo', () => {
+    const S = client()
+    applySnapshot(S, snapshotProgramme(library(), TP1, { assignmentId: 'lk_old', rev: 3 }))
+    S.workouts.push({ id: 'w_r1', d: '2026-10-09', routineIds: [R1], routineId: R1, entries: [] })
+    // A new link to the same trainer: nothing recorded yet, and the same programme comes again.
+    const res = applySnapshot(S, snapshotProgramme(library(), TP1, { assignmentId: 'lk_new', rev: 1 }), { previousRoutineIds: [] })
+    expect(res).toMatchObject({ added: 0, replaced: 2 })
+    expect(S.routines.filter(r => r.id === R1)).toHaveLength(1)
+    expect(routine(S, R1)[ASSIGNED]).toEqual({ by: TRAINER, assignmentId: 'lk_new', rev: 1 })
+    expect(S.workouts.at(-1).routineId).toBe(R1)
+    // Another trainer's routine under that id is still not the module's to overwrite.
+    const T = client()
+    T.routines.push({ id: R1, name: 'Someone else\'s', [ASSIGNED]: { by: 'u_other', assignmentId: 'lk_x', rev: 1 }, ex: [] })
+    expect(() => applySnapshot(T, snapshotProgramme(library(), TP1))).toThrow(expect.objectContaining({ code: 'id-collision' }))
   })
 
   it('customExOf: upstream\'s custom-exercise shape plus src, nothing of the library\'s bookkeeping', () => {
