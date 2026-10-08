@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TrainerHomeCard } from '../trainer/index.js'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutines, effectiveRoutineIds, nextTrainingDay, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
@@ -156,6 +157,7 @@ export default function Home() {
       </div>}
     </div>
 
+    <TrainerHomeCard />
     {/* Jump to the gym check-in cards (QR membership codes). Shown here as a quick tap on
         arrival at the gym; folds away per user via the "Gym check-in" switch in Settings. */}
     {S.checkIn !== false && (

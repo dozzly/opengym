@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation, useNavigationType } from 'react-router-dom'
+import { TrainerRoot, TrainerInbox } from './trainer/index.js'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
@@ -198,6 +199,7 @@ function Shell() {
         <ErrorBoundary>
           {!authed ? <Login /> : needsMobileOnboarding ? <MobileOnboarding /> : (
             <Routes>
+              <Route path="/trainer/*" element={<TrainerRoot />} />
               <Route path="/home" element={<Home />} />
               {/* Gym check-in — switched off in Settings, the route falls through to the
                   catch-all redirect below. */}
@@ -234,6 +236,7 @@ function Shell() {
       <RestTimer />
       <Modals />
       <Toast />
+      <TrainerInbox />
       <TimerFlash />
     </>
   )
