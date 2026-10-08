@@ -20,6 +20,7 @@ Everything else in this repository is upstream's, unchanged.
 - [Branches and layout](#branches-and-layout)
 - [The seam](#the-seam)
 - [Switching the module on and off](#switching-the-module-on-and-off)
+- [The trainer library (FIT-003)](#the-trainer-library-fit-003)
 - [Data contract](#data-contract)
 - [How the sync works](#how-the-sync-works)
 - [When the sync opens an issue](#when-the-sync-opens-an-issue)
@@ -42,8 +43,8 @@ Everything else in this repository is upstream's, unchanged.
 
 | Path | What it is |
 |---|---|
-| `api/trainer/` | Server half: `routes.js`, a route factory like `api/coach/routes.js`, and its tests in `test/`. |
-| `frontend/src/trainer/` | App half. It holds `TrainerRoot.jsx`, `TrainerInbox.jsx` and `adapter.js`, the only file here that reaches into upstream internals. `contract.test.js` pins those internals. |
+| `api/trainer/` | Server half. `routes.js` is a route factory like `api/coach/routes.js`. `library.js` validates library data; `store.js` and `capability.js` are its files; `demo-media.js` runs upstream's media store for demo files. Tests are in `test/`; `media.contract.test.js` and `seam.test.js` pin the upstream internals the server half uses. |
+| `frontend/src/trainer/` | App half. `adapter.js` is the only file here that reaches into upstream internals; `contract.test.js` pins those internals. `library.js` mirrors the server's validation and resolves built-in exercises. `snapshot.js` is the durable-snapshot core. The screens are `TrainerRoot.jsx`, `TrainerHome.jsx`, `ExerciseEditor.jsx`, `ProgrammeEditor.jsx` and `DemoField.jsx`, plus `TrainerInbox.jsx`. |
 | `dozzly/` | This file. `UPSTREAM` is the release the branch is based on. `test.sh` runs every suite. `seam-replay.sh` is the seam durability check. |
 | `.github/workflows/dozzly-sync.yaml` | The sync, test, build and deploy-proposal workflow. |
 
@@ -101,16 +102,167 @@ The module is off unless the api container has `TRAINER=1` (or `true`, `yes`, `o
 - Guests never ask.
 
 **On:** `GET /api/trainer/status` answers `401` when signed out, and
-`{ "enabled": true, "module": "<version>" }` when signed in.
+`{ "enabled": true, "module": "<version>" }` when signed in. The trainer library's routes are
+added too ([below](#the-trainer-library-fit-003)). Turning the module on does not, by itself, let
+anyone do anything. Each user who wants trainer tools turns them on for themselves at `#/trainer`.
 
-**Storage.** The module's store will be `DATA_DIR/trainer/`; nothing is written there yet. The
-module never writes `state-<uid>.json`, `db.json` or another profile's upload folder
-(ADR 029, decision 4).
+**Storage.** Everything the module stores is under `DATA_DIR/trainer/`. Nothing is created there
+until someone writes. The module never writes `state-<uid>.json`, `db.json` or anything under
+`DATA_DIR/uploads/` (ADR 029, decision 4).
+
+## The trainer library (FIT-003)
+
+A trainer keeps reusable exercises and programmes in a library of their own, with a demo video or
+photo per exercise. FIT-003 covers only the trainer's own library. There are no links and no
+client access yet; both arrive with FIT-004.
+
+### Environment
+
+| Variable | Default | What it does |
+|---|---|---|
+| `TRAINER` | unset (off) | `1`, `true`, `yes` or `on` registers the module's routes. Off, every route below is the server's plain 404. |
+| `TRAINER_ALLOW` | unset (anyone) | A comma-separated list of user ids who may turn trainer tools on. Unset or empty means any signed-in user may. Someone removed from the list counts as off; their record is not touched. |
+| `TRAINER_MEDIA_QUOTA_MB` | `500` | The demo-file quota per trainer, in MiB. Fractions are allowed; `0` means no cap; an unparseable value falls back to 500. |
+| `MEDIA_*` | upstream's | The per-file caps, the sweep's grace period and the free-disk floor are upstream's settings (`docs/SELF_HOSTING.md`). `MEDIA_UPLOADS=0` also removes the two demo routes. `MEDIA_QUOTA_MB` does not apply to demo files. |
+
+### Routes
+
+The dispatcher matches exact paths only, so ids go in the body or the query string. Every write
+carries `baseRev` (and `baseWid`, when known), with `PUT /api/data`'s semantics. A stale write
+gets `409 { error: 'conflict', rev, wid, library }`, which includes the current library.
+
+| Route | What it does |
+|---|---|
+| `GET /api/trainer/capability` | `{ enabled, allowed }` for the signed-in user. |
+| `POST /api/trainer/capability` | `{ enabled: true or false }`: turns trainer tools on or off for oneself. `403` outside `TRAINER_ALLOW`. |
+| `GET /api/trainer/library` | The caller's library, `{ v, rev, wid, exercises, programmes, owner, media: { usage, limits } }`. |
+| `POST /api/trainer/library/exercises` | `{ baseRev, exercise }`. Creates an exercise; the server assigns the id. |
+| `PUT /api/trainer/library/exercises` | `{ baseRev, id, exercise, archived? }`. Edits an exercise. `rev` goes up only when the content changes. `archived: false` restores an archived exercise. |
+| `DELETE /api/trainer/library/exercises` | `?id=&baseRev=` (or the same fields in the body). Archives the exercise; nothing is deleted. |
+| `POST`, `PUT`, `DELETE /api/trainer/library/programmes` | The same for programmes, with `programme` in place of `exercise`. |
+| `GET /api/trainer/library/export` | Portable JSON: `{ opengym_trainer_library: 1, module, exported, exercises, programmes }`. It includes archived items and media refs, but no file bytes and no account id. |
+| `PUT /api/media/trainer?hash=<sha256>` | Uploads one demo file as raw bytes, with the MediaRef's type as `Content-Type`. |
+| `GET /api/media/trainer?hash=<sha256>` | Returns one demo file, with upstream's hardened headers (`sendMediaFile`). |
+
+**Who can call these routes:**
+- Every library and upload route needs a session (`401` without one) and trainer tools turned on
+  (`403 trainer-off` otherwise). Turned off, the library stays on disk, and reads and writes are
+  refused.
+- No route reads another user's data.
+- Reading a demo file is decided by one function, `canReadDemo(viewer, trainer, hash)` in
+  `api/trainer/demo-media.js`. In FIT-003 it allows only the owning trainer, with tools on.
+  Anyone else gets the same `404 media-missing` that a file that does not exist gets.
+
+The two media routes live under `/api/media/` because that is the only nginx location that
+passes large bodies through unbuffered (`web/nginx.conf.template`). Everything else under `/api/`
+is capped at 5 MB.
+
+### What is stored
+
+| Path | Contents |
+|---|---|
+| `DATA_DIR/trainer/capabilities.json` | `{ v: 1, users: { <uid>: { enabled, at } } }`: one switch per user, and nothing else. No grants, no links. |
+| `DATA_DIR/trainer/library/<uid>.json` | `{ v: 1, rev, wid, exercises: [], programmes: [] }`. |
+| `DATA_DIR/trainer/media/<uid>/<sha256>.<ext>` | Demo files, plus `.gc.json` (sweep marks) and `.tmp/` (uploads in progress). |
+
+**Library exercise:**
+- A stable id, `tx_<16 hex>`.
+- `rev`, which goes up with every content change.
+- `archived`, `createdAt` and `updatedAt`.
+- Upstream's custom-exercise content, as far as it applies: `n`, `bp`, `eq`, `desc`
+  (instructions), `primaries`, `secondaries`, `url`, and `media` (upstream's MediaRef, validated
+  the way the app's `normalizeMediaRef` validates it).
+
+**Programme:**
+- `tp_<16 hex>`, `rev`, `name`, `unit` (`kg` or `lb`).
+- Upstream-shaped `routines`, each with a stable `tr_<16 hex>` id.
+- A `week`, plus `archived` and the two timestamps.
+
+**Programme slots.** A slot names either:
+- a library exercise, as `{ id: 'tx_…', sets, reps, … }`. It must exist and not be archived
+  when it is added. An archived exercise stays usable in programmes that already had it.
+- a built-in exercise, as `{ id: '0043', catalog: 'og1', … }`.
+
+**Built-in exercise ids.** Upstream's v1.4.0 replaces its exercise catalogue, and the ids change.
+Upstream migrates its own data, but not `DATA_DIR/trainer/`. So:
+- Every built-in reference records the catalogue it came from. `og1` is openGym 1.3.x's
+  catalogue: 1,324 exercises with four-digit ids.
+- All such references go through `builtinRef()` (server and app) and `resolveBuiltin()` (app).
+  A later id mapping belongs there.
+- The app trusts an `og1` id only while its own catalogue still fingerprints as `og1`. Otherwise
+  the slot shows as "Unknown exercise", is kept in the programme, and is left out of a snapshot,
+  which lists it in `unresolved`.
+- `contract.test.js` fails the build when upstream's catalogue stops being `og1`.
+
+**Bounds.** Every string, list and number is bounded, and unknown fields are dropped. The limits
+are 500 exercises and 100 programmes per trainer, 14 routines per programme, 40 slots per
+routine, 80-character names and 1,000-character instructions. A value out of range is refused,
+not clamped.
+
+**Demo files** are a separate security domain from private media. The module runs its own
+instance of upstream's `createMediaStore` on `DATA_DIR/trainer/media/`, with upstream's modes
+(0700 directories, 0600 files), checks and caps, and a quota per trainer. Its view of a trainer's
+"state" is that trainer's library, archived exercises included. As a result:
+- Upstream's sweep (hourly, and five minutes after boot) keeps every file the library refers to.
+- A file nothing refers to is removed after upstream's grace period (`MEDIA_GC_GRACE_DAYS`, 14
+  days). Under quota pressure that becomes an hour, as in upstream.
+- A library that is missing or unreadable keeps every file.
+- A folder whose user is not in `db.json` is left alone.
+
+**Audit.** `audit.log` gets these events:
+- `trainer.capability`
+- `trainer.exercise.create`, `.update`, `.archive`, `.restore`, `.denied`, `.refused`
+- `trainer.programme.*`, with the same suffixes
+- `trainer.media.upload`, `.refused`, `.denied`
+
+Each event records the user id, item ids, revisions, counts and a hash prefix. It never records
+names, instructions, file contents or the account's display name.
+
+**Safety:**
+- A missing library reads as empty.
+- A library or capabilities file that cannot be parsed is never replaced. Reads and writes of the
+  library answer `503 unreadable`, and nobody counts as turned on.
+- Nothing is ever deleted because something is missing.
+
+### Backup and restore
+
+Everything is under `DATA_DIR/trainer/`, inside the `opengym-data` volume, so the volume backup
+already covers it. Restoring the volume restores the module's data along with upstream's, and each
+trainer's library keeps its ids and revisions. After a restore:
+- A device still showing a newer revision gets a 409 on its next write, and the reloaded library
+  replaces what it shows.
+- Write ids are checked too, so a revision number reused after the restore is still caught.
+
+To remove the module's data, delete `DATA_DIR/trainer/` after taking a backup.
+
+When an admin deletes a profile, upstream removes that profile's state and uploads, but not the
+profile's trainer data. The sweep leaves that data alone, as an orphan. Remove
+`DATA_DIR/trainer/library/<uid>.json` and `DATA_DIR/trainer/media/<uid>/` by hand if they are not
+wanted. FIT-004 should do this itself.
+
+### The durable snapshot (for FIT-004)
+
+`frontend/src/trainer/snapshot.js` holds the core that FIT-004 delivers:
+- `snapshotProgramme(library, programmeId)` deep-copies one programme:
+  - Its routines, in upstream's shape, each with `assigned: { by, assignmentId, rev }`.
+  - Each library exercise they use, as a full custom exercise under its `tx_` id: `custom: true`,
+    the MediaRef, and `src: { trainer, exRev }`.
+  - Later library edits or archiving do not change a snapshot that was already taken.
+- `applySnapshot(state, snapshot, { previousRoutineIds })`:
+  - Replaces only the routines recorded for the previous revision, in place, keeping their ids.
+  - Removes routines dropped from the new revision, using upstream's `deleteRoutine`.
+  - Adds or updates the custom exercises and never removes one.
+  - Converts units through `parsePlan`.
+  - Touches nothing else.
+  - If a routine or exercise id in the snapshot already belongs to something the module did not
+    deliver, it refuses before changing anything.
 
 ## Data contract
 
-An applied assignment leaves a marker on the client's own routines and custom exercises:
-`assigned: { by, assignmentId, rev }`, plus `exId` on a custom exercise. The client's app applies
+An applied assignment leaves a marker on the client's own routines: `assigned: { by,
+assignmentId, rev }`. A delivered custom exercise keeps the trainer's stable `tx_` id as its own
+id, and carries `src: { trainer, exRev }`. Both are pinned through the same paths as the marker
+(store load and heal, unit switch, the sync merge, the server's stamping, `parsePlan`). The client's app applies
 the assignment and syncs it through the normal revision machinery. `frontend/src/trainer/contract.test.js`
 and `api/trainer/test/` establish how upstream treats that marker. These are the design rules
 that follow from it.
@@ -330,5 +482,6 @@ the Actions tab.
 - **Known gaps:**
   - Upstream's in-app "update available" notice still points at upstream's releases.
   - The native Android and iOS apps are out of scope (ADR 029).
-  - Trainer demo files in the trainer's own upload folder are swept like any unreferenced upload,
-    so FIT-003 has to keep them referenced or stored by the module.
+  - The trainer screens are English only (`strings.js`).
+  - The programme editor does not edit the week, progression rules or slot order. A programme
+    keeps whatever week it has, and new ones have none.
