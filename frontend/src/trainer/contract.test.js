@@ -548,3 +548,94 @@ describe('FIT-003: a delivered custom exercise (tx_ id, `src`) lives through wha
     expect([...clientRefs(delivered())]).toEqual(['a'.repeat(64)])
   })
 })
+
+/* ============================================================= FIT-004: delivery and progress */
+
+import { useUI } from '../store/useUI.js'
+import { buildCompletedWorkout } from '../lib/finish-workout.js'
+import { buildSessionEntries } from '../lib/session-start.js'
+import { progressView } from '../../../api/trainer/progress.js'
+import { readFileSync } from 'node:fs'
+
+const source = rel => readFileSync(new URL(rel, import.meta.url), 'utf8')
+
+describe('FIT-004: the upstream surface delivery uses', () => {
+  it('exists, under the names the module calls', () => {
+    for (const fn of ['toast', 'useWorkoutRunning', 'useProfileReady']) expect(adapter[fn], fn).toBeTypeOf('function')
+    expect(DEF.dayPlan).toEqual({})
+    expect(DEF.active).toBe(null)
+    // `ready`: false until the boot's first pull is done (finishBoot), when pushes start.
+    expect(useStore.getState()).toHaveProperty('ready')
+    expect(source('../store/useStore.js')).toContain('const finishBoot = (extra = {}) => {\n    set({ ready: true, ...extra })')
+  })
+
+  it('toast(msg, { action, onAction }): one toast with a button that runs its action once, and a plain toast replaces it', () => {
+    let ran = 0
+    adapter.toast('Applied.', { action: 'Undo', onAction: () => { ran++ } })
+    expect(useUI.getState().toastMsg).toBe('Applied.')
+    expect(useUI.getState().toastAction).toMatchObject({ label: 'Undo' })
+    useUI.getState().runToastAction()
+    useUI.getState().runToastAction()
+    expect(ran).toBe(1)
+    expect(useUI.getState().toastMsg).toBe('')
+    adapter.toast('With', { action: 'Undo', onAction: () => {} })
+    adapter.toast('Without')
+    expect(useUI.getState().toastAction).toBe(null)
+  })
+
+  it('a running workout is the store\'s `S.active`', () => {
+    const div = document.createElement('div')
+    const r = createRoot(div)
+    let seen
+    function Probe() { seen = adapter.useWorkoutRunning(); return null }
+    useStore.setState({ S: { ...clone(DEF), active: { id: 'a', entries: [] } } })
+    act(() => r.render(h(Probe)))
+    expect(seen).toBe(true)
+    act(() => useStore.setState({ S: clone(DEF) }))
+    expect(seen).toBe(false)
+    act(() => r.unmount())
+  })
+
+  it('upstream\'s media sync copies a file into a profile\'s own folder the way delivery does: POST /api/media/missing, then PUT /api/media/<hash>', () => {
+    const sync = source('../lib/media-sync.js')
+    expect(sync).toContain("d.api('/api/media/missing', { method: 'POST', body: JSON.stringify({ hashes: refs.slice(i, i + MISSING_CHUNK) }) })")
+    expect(sync).toContain("d.apiUpload('/api/media/' + h, rec.blob, rec.mime)")
+    expect(sync).toContain('if (Array.isArray(r?.missing)) missing.push(...r.missing)')
+    // The server side of both, and that the second writes the caller's own folder only.
+    const server = source('../../../api/server.js')
+    expect(server).toContain("'POST /api/media/missing': async (req, res) => {")
+    expect(server).toContain('json(res, 200, MEDIA.missing(user.id, hashes));')
+    expect(server).toContain('const r = await MEDIA.receive(user.id, req.mediaHash, req);')
+  })
+
+  it('a finished workout as the app writes it (buildSessionEntries, buildCompletedWorkout) is what the progress view reads', () => {
+    const S = { ...clone(DEF), unit: 'kg', routines: [{ id: 'tr_0000000000000001', name: 'Lower', ex: [{ id: SQUAT, sets: 2, reps: 5, weight: 100 }] }] }
+    const r = S.routines[0]
+    const start = 1_800_000_000_000
+    const entries = buildSessionEntries(S, r).map(e => ({ ...e, note: 'Knees out', sets: e.sets.map((s, i) => ({ ...s, done: i === 0, rir: 2, at: start + i })) }))
+    const w = buildCompletedWorkout({ id: 'w1', d: '2027-01-15', start, routineIds: [r.id], routineId: r.id, name: r.name, bw: 80, note: 'Good', entries }, { end: start + 1800000 })
+    // The fields the view relies on, where upstream keeps them.
+    expect(w).toMatchObject({ id: 'w1', d: '2027-01-15', start, end: start + 1800000, routineIds: [r.id], routineId: r.id, bw: 80, note: 'Good' })
+    expect(w.entries[0]).toMatchObject({ id: SQUAT, note: 'Knees out' })
+    expect(w.entries[0].sets[0]).toMatchObject({ w: 100, r: 5, done: true, rir: 2 })
+    const view = progressView({ ...S, workouts: [w] }, { assignment: { published: [{ rev: 1, snapshot: { routines: [{ id: r.id, name: 'Lower' }], customEx: [] } }], applied: null }, since: start - 1, shareBodyweight: true })
+    expect(view.workouts).toEqual([{
+      id: 'w1', date: '2027-01-15', start, duration: 1800, routines: [{ id: r.id, name: 'Lower' }], note: 'Good', bodyweight: 80,
+      exercises: [{ id: SQUAT, name: null, note: 'Knees out', sets: [
+        { weight: 100, reps: 5, time: null, effort: { rir: 2 }, done: true },
+        { weight: 100, reps: 5, time: null, effort: { rir: 2 }, done: false },
+      ] }],
+    }])
+    // A workout's photos and videos are `media` on the workout, which the view never copies.
+    expect(source('../lib/media-refs.js')).toContain('if (!isObj(w) || !Array.isArray(w.media)) continue')
+    // Weigh-ins are { d, w } entries of S.bodyweight, as the app's own charts read them.
+    expect(source('../views/Home.jsx')).toContain('S.bodyweight.slice(-30).map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))')
+  })
+
+  it('the service worker shows a push\'s title, body and tag (the module sends no names in any of them)', () => {
+    const sw = source('../../public/sw.js')
+    expect(sw).toContain("const tag = data.tag || 'opengym'")
+    expect(sw).toContain("await self.registration.showNotification(data.title || 'openGym', {")
+    expect(sw).toContain("body: data.body || '',")
+  })
+})

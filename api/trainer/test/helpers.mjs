@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -79,6 +80,31 @@ export async function startServer(t, { env = {}, users = [{ id: 'u_one', name: '
     try { json = JSON.parse(buf.toString('utf8')); } catch { /* a file */ }
     return { status: r.status, headers: r.headers, bytes: buf, body: json };
   };
+  /** One request over node:http rather than fetch, for callers whose global fetch is not node's
+   *  (vitest's happy-dom, which would add an Origin and apply CORS): { status, headers, body (the
+   *  JSON answer, or null), bytes }. `body` is sent as JSON, `bytes` as is with `mime`. */
+  h.http = (method, p, { uid, body, bytes, mime } = {}) => new Promise((resolve, reject) => {
+    const payload = bytes ? Buffer.from(bytes) : body !== undefined ? Buffer.from(JSON.stringify(body)) : null;
+    const req = http.request(h.api + p, {
+      method,
+      headers: {
+        ...(payload ? { 'Content-Type': bytes ? mime : 'application/json', 'Content-Length': String(payload.length) } : {}),
+        ...(uid ? { Cookie: cookieFor(uid) } : {})
+      }
+    }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        let json = null;
+        try { json = JSON.parse(buf.toString('utf8')); } catch { /* a file */ }
+        resolve({ status: res.statusCode, headers: res.headers, body: json, bytes: buf });
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
   /** The audit log's records, oldest first. */
   h.audit = () => {
     try { return fs.readFileSync(path.join(dataDir, 'audit.log'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); }
