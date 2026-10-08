@@ -162,14 +162,16 @@ that follow from it.
    `/api/config`, contain no AI runtime, and answer `/api/trainer/status` with 404 when off and
    401 when on.
 5. Builds and pushes `ghcr.io/dozzly/opengym-api` (upstream's default target, the one the cluster
-   runs today) and `ghcr.io/dozzly/opengym-web` as `<version>-dozzly.<n>`, for linux/amd64 and
-   linux/arm64. The web build shows `<version>+dozzly.<n>` in the app.
+   runs today) and `ghcr.io/dozzly/opengym-web` as `<version>-dozzly.<n>`, for linux/amd64 only
+   (the cluster's only architecture; emulating arm64 on a one-CPU runner is not worth it). The web
+   build shows `<version>+dozzly.<n>` in the app.
 6. Pushes `dozzly/trainer` (`--force-with-lease`) and the `dozzly/build/<tag>` tag in one atomic
    push.
-7. Opens a pull request in `dozzly/dozzly-cluster` that pins both digests in
-   `apps/fitness/deployment.yaml`, and switches the repositories in `apps/fitness/component.yaml`.
-   The operator merges it. The pull request body carries the rollback digests (upstream's images
-   of the same version).
+7. Writes both digests into the run summary. The digest-pin pull request against
+   `apps/fitness/deployment.yaml` is opened from `dozzly/dozzly-cluster`'s side, with that
+   repository's own token, so this fork holds no credential for the cluster repository. Until
+   that workflow exists, the digests are pinned from the summary by hand. The operator merges
+   either way.
 
 **What triggers a build:**
 - On a schedule, a new upstream release.
@@ -177,7 +179,7 @@ that follow from it.
   commits).
 
 **On failure.** A rebase conflict, a failing suite or a failed build opens an issue here, or
-comments on the open one. Nothing is pushed, built or proposed.
+comments on the open one. Nothing is pushed or built.
 
 ### main-check (nightly at 01:43 UTC)
 
@@ -246,42 +248,56 @@ approval:
 1. **Create the fork and push.** Fork `DuarteSantos8/openGym` to `dozzly/opengym` (public). Push
    `dozzly/trainer` from the prepared local repository and make it the **default branch**
    (Settings, Branches). Scheduled workflows only run from the default branch.
-2. **Enable Actions.** Actions are off in a new fork until you confirm them in the Actions tab.
-3. **Handle upstream's workflows.** The fork carries them; they run from the copies on `main`
-   whenever the sync fast-forwards it. Set them up as follows (Actions, select the workflow, then
-   "Disable workflow"):
+2. **Give the cluster's runners access.** The sync runs on the `opengym` runner scale set in the
+   homelab cluster (`dozzly/dozzly-cluster`,
+   `infrastructure/ci/actions-runner-controller/runnerset-opengym-helmrelease.yaml`):
+   - Add `dozzly/opengym` to the repositories of the ARC GitHub App installation (GitHub,
+     Settings, Applications, the ARC app, Configure, Repository access).
+   - Merge the dozzly-cluster pull request that adds the runner set. The repository then lists
+     `opengym` under Settings, Actions, Runners.
+3. **Enable Actions, and protect the self-hosted runner.** Actions are off in a new fork until
+   you confirm them in the Actions tab. Then, in Settings, Actions, General:
+   - **Fork pull request workflows from outside collaborators:** "Require approval for all
+     outside collaborators". This is a public repository with a self-hosted runner. A pull
+     request can bring its own workflow with `runs-on: opengym`, so nothing from a stranger may
+     run on the cluster without approval.
+   - Leave the default workflow permissions at "Read repository contents". The sync declares
+     the extra permissions it needs per job.
+4. **Disable all four of upstream's workflows** (Actions, select the workflow, then "Disable
+   workflow"). The fork carries them, and they would run from the copies on `main` whenever the
+   sync fast-forwards it. They target GitHub's hosted runners, and the sync already runs
+   upstream's test commands on the cluster:
 
-   | Workflow | In the fork | Recommendation |
-   |---|---|---|
-   | `docker-publish.yml` (Publish Docker images) | On every push to `main` it would publish upstream `main` as `ghcr.io/dozzly/opengym-{api,web}:edge`, into the same packages as the fork builds. | **Disable** |
-   | `pages.yml` (Deploy demo to GitHub Pages) | Tries to publish upstream's demo to this repository's Pages. It fails without Pages, or publishes a demo nobody asked for. | **Disable** |
-   | `mirror.yml` (Mirror to GitLab) | Guarded by `github.repository == 'DuarteSantos8/openGym'`, so it shows as skipped. | Leave, or disable for tidiness |
-   | `test.yml` (Tests) | Runs upstream's suites on pushes to `main`. Harmless. | Leave; disable to save Actions minutes |
+   | Workflow | Why disable it |
+   |---|---|
+   | `docker-publish.yml` (Publish Docker images) | On a push to `main` it would publish upstream `main` as `ghcr.io/dozzly/opengym-{api,web}:edge`, into the same packages as the fork builds. |
+   | `pages.yml` (Deploy demo to GitHub Pages) | Tries to publish upstream's demo to this repository's Pages. |
+   | `test.yml` (Tests) | Duplicates `dozzly/test.sh`, on GitHub-hosted runners. |
+   | `mirror.yml` (Mirror to GitLab) | Already skips itself outside upstream; disable for tidiness. |
 
    `.gitea/workflows/` and `.gitlab-ci.yml` are not run by GitHub. Leave Dependabot version
    updates off and don't install Renovate on the fork; their configuration is upstream's.
-4. **Enable Issues.** Forks start with Issues off (Settings, Features). The sync reports through
+5. **Enable Issues.** Forks start with Issues off (Settings, Features). The sync reports through
    them.
-5. **Add the deploy key.**
+6. **Add the deploy key.**
    1. Run `ssh-keygen -t ed25519 -N '' -C dozzly-opengym-sync -f opengym_sync`.
    2. Add `opengym_sync.pub` under Settings, Deploy keys, with **write access**.
-   3. Store the private half as the Actions secret `FORK_DEPLOY_KEY`.
+   3. Store the private half (`opengym_sync`) as the Actions secret `FORK_DEPLOY_KEY`, then
+      delete both local files.
 
    A deploy key, not `GITHUB_TOKEN`: GitHub refuses a `GITHUB_TOKEN` push that changes
    `.github/workflows/*`, and both the fast-forward of `main` and every rebase onto upstream carry
-   upstream's workflow changes. A GitHub App token with `contents` and `workflows` write would
-   also do.
-6. **Add `CLUSTER_PR_TOKEN` (optional).** Use a fine-grained personal access token whose only
-   repository is `dozzly/dozzly-cluster`, with Contents and Pull requests read/write (Metadata
-   read is implied). Without it the pull request step is skipped with a notice, and you pin the
-   digests from the run summary by hand.
+   upstream's workflow changes. The key reaches this one repository only. Running on the
+   cluster's runners does not change this, because the token GitHub issues to the job is the same.
 7. **Run the first build.** Actions, "dozzly: follow upstream releases", Run workflow, mode
-   `release`, **build** checked. It builds `1.3.10-dozzly.1`.
+   `release`, **build** checked. It builds `1.3.10-dozzly.1`. With one CPU per runner container
+   (the cluster's `arc-runners` LimitRange), expect a long first run.
 8. **Publish the packages.** After the first build, open `opengym-api` and `opengym-web` under the
    account's Packages:
    - Set each to **Public**, so the cluster pulls without credentials.
    - Check that each is linked to `dozzly/opengym`, with Actions write access.
-9. **Merge with the gates in mind.** Merging the cluster pull request is the FIT-006 deploy step:
+9. **Merge with the gates in mind.** Pinning the fork build in the cluster is the FIT-006 deploy
+   step:
    - It needs FIT-002 (the 1.3.10 baseline).
    - The fork build must behave like upstream 1.3.10 on the live data before the module is ever
      switched on.

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # The homelab ARC runner scale set this fork's sync workflow runs on (dozzly/README.md).
+  labels:
+    - opengym
