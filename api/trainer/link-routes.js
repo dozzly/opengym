@@ -396,7 +396,7 @@ export function linkRoutes(ctx) {
       // Read-only: the client's state file is read here and never written by this module.
       const state = readStateStrict(l.client);
       if (state === stateUnreadable) return json(res, 503, { error: 'the client\'s data cannot be read', code: 'unreadable' });
-      const view = progressView(state, { assignment: a, since: l.createdAt, shareBodyweight: l.shareBodyweight });
+      const view = progressView(state, { assignment: a, trainer: l.trainer, since: l.createdAt, shareBodyweight: l.shareBodyweight });
       const names = routineNames(a);
       const routines = [...assignedRoutineIds(a)].map(id => ({ id, name: names.get(id) || null }));
       note(req, 'trainer.progress.read', user.id, `${l.id}: ${view.workouts.length} workout(s)${l.shareBodyweight ? `, ${view.bodyweight.length} weigh-in(s)` : ''}`);
