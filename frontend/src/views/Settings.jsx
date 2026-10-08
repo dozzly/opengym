@@ -794,7 +794,7 @@ export default function Settings({ page = null, find = null, via = null }) {
           which build you are running, or whether an update actually installed. */}
       <div className="dim small sp-version">
         openGym v{__APP_VERSION__} · {t('free & open source (AGPL v3)')}<br />
-        <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">{t('Source code')}</a> · exercise data: hasaneyldrm/exercises-dataset (MIT)<br />
+        <a href="https://github.com/dozzly/opengym" target="_blank" rel="noopener">{t('Source code')}</a> · exercise data: hasaneyldrm/exercises-dataset (MIT)<br />
         exercise images and animations © <a href="https://gymvisual.com/" target="_blank" rel="noopener">Gym visual</a>
       </div>
     </>,
