@@ -21,6 +21,7 @@
  */
 import crypto from 'node:crypto';
 import { HASH_RE, MEDIA_TYPES } from '../media.js';
+import { inOg1 } from './catalog-og1.js';
 
 export const LIBRARY_FORMAT = 1;
 export const EXPORT_FORMAT = 1;
@@ -66,6 +67,19 @@ export function builtinRef(id, catalog = CURRENT_CATALOG) {
   return CATALOGS[catalog].test(id) ? { id, catalog } : null;
 }
 
+// Which ids each catalogue holds: the server's stand-in for the catalogue the app resolves against
+// (resolveBuiltin in frontend/src/trainer/library.js). Used when the server builds the snapshot it
+// publishes (snapshot.js), so a slot naming an id its catalogue does not have is caught there.
+const MEMBERS = Object.freeze({ og1: inOg1 });
+
+/** The built-in exercise a stored reference ({ id, catalog }) names, as { id, catalog }, or null:
+ *  no catalogue named, one this module does not know, an id not of its form, or not in it. */
+export function resolveBuiltin(ref) {
+  if (!ref || typeof ref.catalog !== 'string') return null;
+  const r = builtinRef(ref.id, ref.catalog);
+  return r && MEMBERS[r.catalog](r.id) ? r : null;
+}
+
 export const newId = prefix => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 export const newWid = () => crypto.randomBytes(8).toString('hex');
 
@@ -94,6 +108,10 @@ function text(v, field, max, { required = false, multiline = false } = {}) {
   return s;
 }
 const word = (v, field, { required = false } = {}) => text(v, field, LIMITS.word, { required });
+
+/** A note of the trainer's (a slot's, an assignment's): at most 500 characters, line breaks
+ *  allowed, trimmed; '' for none. Throws LibraryError. */
+export const cleanNote = (v, field = 'note') => text(v, field, LIMITS.note, { multiline: true });
 
 function wordList(v, field) {
   if (v == null) return [];
