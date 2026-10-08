@@ -10,7 +10,7 @@
  * every path below is the server's plain 404: what an upstream build answers, and what the app
  * reads as "this server has no trainer module". Nothing is created on disk at boot either way.
  *
- * Routes (FIT-003: one trainer's own library; there is no route that reads another user's data):
+ * Routes (FIT-003: one trainer's own library):
  *
  *   GET    /api/trainer/status                 module version (signed in)
  *   GET    /api/trainer/capability             { enabled, allowed }
@@ -24,7 +24,12 @@
  *   DELETE /api/trainer/library/programmes     ?id=&baseRev=                    archive
  *   GET    /api/trainer/library/export         portable JSON: media refs, no bytes
  *   PUT    /api/media/trainer?hash=<sha256>    upload a demo file (raw bytes)
- *   GET    /api/media/trainer?hash=<sha256>    a demo file (only its trainer, in FIT-003)
+ *   GET    /api/media/trainer?hash=<sha256>    a demo file (its trainer; a linked client, FIT-004)
+ *
+ * FIT-004 adds consent, assignments and progress (link-routes.js): invites, links, a draft and
+ * published revisions per link, the client's acknowledgement, and read-only progress. The only
+ * routes that read another user's data are the progress view of a linked client, and a demo file
+ * for that client; both need an active link.
  *
  * The server's dispatcher keys on the exact path, so ids travel in the body or the query string.
  * The two media routes sit under /api/media/ because that is the one prefix the web container's
@@ -46,8 +51,13 @@ import {
 import { createLibraryStore, UNREADABLE } from './store.js';
 import { createCapabilities } from './capability.js';
 import { createDemoMedia, trainerMediaLimits } from './demo-media.js';
+import { createLinkStore, createCodeLimiter, isActive } from './links.js';
+import { createAssignmentStore } from './assignments.js';
+import { snapshotHashes } from './snapshot.js';
+import { sweepOrphans } from './cleanup.js';
+import { linkRoutes } from './link-routes.js';
 
-export const MODULE_VERSION = '0.2.0';
+export const MODULE_VERSION = '0.3.0';
 
 const ON = /^(1|true|yes|on)$/i;
 export const trainerEnabled = (env = process.env) => ON.test(env.TRAINER || '');
@@ -57,7 +67,7 @@ export const storeDir = dataDir => path.join(dataDir, 'trainer');
 
 // The helpers the routes below call. Checked once at boot so a helper that upstream renamed or
 // dropped stops the server with a clear message instead of failing on the first request.
-const NEEDED = ['json', 'readSession', 'readBody', 'audit', 'atomicWrite', 'sendMediaFile', 'users'];
+const NEEDED = ['json', 'readSession', 'readBody', 'audit', 'atomicWrite', 'sendMediaFile', 'users', 'readStateStrict', 'sendPush'];
 
 const HOUR = 3600000;
 const query = req => new URL(req.url || '/', 'http://x').searchParams;
@@ -71,14 +81,42 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
   if (!trainerEnabled(env)) return {};
   const missing = NEEDED.filter(k => typeof helpers?.[k] !== 'function');
   if (typeof helpers?.dataDir !== 'string' || !helpers.dataDir) missing.push('dataDir');
+  if (typeof helpers?.UNREADABLE !== 'symbol') missing.push('UNREADABLE');
   if (missing.length) throw new Error(`trainer module: server.js no longer passes ${missing.join(', ')}`);
-  const { json, readSession, readBody, audit, atomicWrite, sendMediaFile, users } = helpers;
+  const { json, readSession, readBody, audit, atomicWrite, sendMediaFile, users, readStateStrict, sendPush } = helpers;
 
   const dir = storeDir(helpers.dataDir);
   const library = createLibraryStore({ dir, atomicWrite, log });
   const caps = createCapabilities({ dir, atomicWrite, env, now });
+  const links = createLinkStore({ dir, atomicWrite, now });
+  const assignments = createAssignmentStore({ dir, atomicWrite });
+  const limiter = createCodeLimiter({ now });
+  // What links add to demo media: the files a trainer's published snapshots still name (kept by
+  // the sweep), and who besides the trainer may read one (a linked client, for those files).
+  const published = {
+    refs(trainer) {
+      const doc = links.read();
+      if (doc === UNREADABLE) return null;
+      const out = [];
+      for (const l of doc.links) {
+        if (l.trainer !== trainer || !isActive(l)) continue;
+        const a = assignments.read(l.id);
+        if (a === UNREADABLE) return null;
+        for (const p of a.published) for (const c of p.snapshot.customEx || []) if (c.media) out.push(c.media);
+      }
+      return out;
+    },
+    clientMayRead(viewer, trainer, hash) {
+      const doc = links.read();
+      if (doc === UNREADABLE) return false;
+      const l = doc.links.find(x => x.client === viewer && x.trainer === trainer && isActive(x));
+      if (!l) return false;
+      const a = assignments.read(l.id);
+      return a !== UNREADABLE && a.published.some(p => snapshotHashes(p.snapshot).has(hash));
+    }
+  };
   // MEDIA_UPLOADS=0 switches demo uploads off with the rest of the instance's media.
-  const demo = trainerMediaLimits(env).enabled ? createDemoMedia({ dir, library, capabilities: caps, env, now, log }) : null;
+  const demo = trainerMediaLimits(env).enabled ? createDemoMedia({ dir, library, capabilities: caps, published, env, now, log }) : null;
   // Removes demo files that the trainer's readable library has not referenced for the grace
   // period. Only profiles in db.json, and only those whose library reads (see demo-media.js).
   const sweepDemos = () => {
@@ -88,16 +126,24 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
       return r;
     } catch (e) { log.error?.('trainer media: sweep failed', e.message); return null; }
   };
-  if (demo) {
-    // Leftovers of uploads the previous process was receiving when it stopped.
-    try { demo.store.cleanTmp(); } catch (e) { log.error?.('trainer media: boot cleanup failed', e.message); }
-    // The same rhythm as upstream's own sweep: hourly, and once a few minutes after boot.
-    if (timers) {
-      setInterval(sweepDemos, HOUR).unref();
-      setTimeout(sweepDemos, 5 * 60000).unref();
-    }
+  // The module's data of profiles that were deleted (cleanup.js), before the demo sweep.
+  const sweepGone = () => {
+    try {
+      const r = sweepOrphans({ dir, users, links, assignments, library, demo, capabilities: caps, log });
+      const n = r.invites + r.links + r.assignments + r.libraries + r.media + r.capabilities;
+      if (n) log.log?.(`trainer: removed data of deleted profiles (${r.links} link(s), ${r.invites} invite(s), ${r.assignments} assignment(s), ${r.libraries} librar(ies), ${r.media} demo folder(s))`);
+      return r;
+    } catch (e) { log.error?.('trainer: cleanup failed', e.message); return null; }
+  };
+  const sweep = () => { sweepGone(); if (demo) sweepDemos(); };
+  // Leftovers of uploads the previous process was receiving when it stopped.
+  if (demo) { try { demo.store.cleanTmp(); } catch (e) { log.error?.('trainer media: boot cleanup failed', e.message); } }
+  // The same rhythm as upstream's own sweep: hourly, and once a few minutes after boot.
+  if (timers) {
+    setInterval(sweep, HOUR).unref();
+    setTimeout(sweep, 5 * 60000).unref();
   }
-  if (internals) Object.assign(internals, { library, capabilities: caps, demo, sweepDemos: demo ? sweepDemos : null });
+  if (internals) Object.assign(internals, { library, capabilities: caps, links, assignments, limiter, demo, sweepDemos: demo ? sweepDemos : null, sweepGone });
 
   const note = (req, ev, uid, msg, ok = true) => audit(req, ev, { uid, msg, ok });
 
@@ -334,6 +380,11 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
       json(res, 200, { ok: true, rev: out.doc.rev, wid: out.doc.wid, programme: p });
     }
   };
+
+  Object.assign(routes, linkRoutes({
+    json, readSession, readBody, note, now, trainerOf, log,
+    caps, library, links, assignments, limiter, demo, users, readStateStrict, stateUnreadable: helpers.UNREADABLE, sendPush
+  }));
 
   if (!demo) return routes;
 
