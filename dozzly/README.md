@@ -511,8 +511,10 @@ never ships unreleased upstream code. Do it by hand with
 
 **What triggers a build:**
 - On a schedule, a new upstream release.
-- By hand, set **build** to also build the current branch (the first build, or new module
-  commits).
+- On a schedule, module work merged since the last published build. That is, the image paths
+  (`api/` except `openapi.yaml`, `frontend/`, `web/`) differ from the commit the newest
+  `dozzly/build/*` tag names.
+- By hand, with **build** ticked, at any time.
 
 **On failure.** A rebase conflict, a failing suite or a failed build opens an issue here, or
 comments on the open one. Nothing is pushed or built.

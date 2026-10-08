@@ -115,12 +115,21 @@ jobs:
           rebase=false
           if ! git merge-base --is-ancestor "$new" "$old"; then rebase=true; fi
           build=$rebase
+          # Module work merged since the last published build is built as well, without waiting for
+          # an upstream release: what goes into the images differs from the commit the newest
+          # dozzly/build/* tag names (or there is no build yet).
+          git fetch --quiet origin '+refs/tags/dozzly/build/*:refs/tags/dozzly/build/*' || true
+          last=$(git tag -l 'dozzly/build/*' | sed 's#^dozzly/build/##' | sort -t- -k1,1V -k2,2V | tail -n 1)
+          changed=false
+          if [ -z "$last" ]; then changed=true
+          elif ! git diff --quiet "dozzly/build/$last" HEAD -- api frontend web ':(exclude)api/openapi.yaml'; then changed=true; fi
+          if [ "$changed" = true ]; then build=true; fi
           if [ "$FORCE_BUILD" = true ]; then build=true; fi
           {
             echo "old=$old"; echo "new=$new"; echo "rebase=$rebase"; echo "build=$build"
           } >> "$GITHUB_OUTPUT"
           echo "OLD=$old" >> "$GITHUB_ENV"; echo "NEW=$new" >> "$GITHUB_ENV"
-          echo "### dozzly sync: based on $old, newest upstream release $new (rebase: $rebase, build: $build)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### dozzly sync: based on $old, newest upstream release $new (rebase: $rebase, module changed since build ${last:-none}: $changed, build: $build)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Rebase onto ${{ steps.plan.outputs.new }}
         if: steps.plan.outputs.rebase == 'true'
