@@ -17,6 +17,9 @@
  *       survive editing that exercise, and copyRoutine copies the marker onto the copy
  *   plus: mergePlan mints new ids and drops unknown routine fields, so it cannot apply an
  *   assignment revision; parsePlan keeps them.
+ *   FIT-003 adds, at the end: the library's needs (the media ingest, the upload and download
+ *   transports, the MediaRef gate, the catalogue and its identity, the UI components) and the
+ *   delivered custom exercise's own fields (a tx_ id, `src`) through the same paths as the marker.
  *
  * Written without JSX so the file keeps the name the README and the workflow give it. */
 import React, { act } from 'react'
@@ -27,7 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const sheets = vi.hoisted(() => ({
   exConfigSheet: vi.fn(), exercisePicker: vi.fn(), glyphPicker: vi.fn(), confirmSheet: vi.fn(),
 }))
-vi.mock('../lib/api.js', () => ({ api: vi.fn(() => Promise.resolve({})), setRemoteAuth: vi.fn() }))
+vi.mock('../lib/api.js', () => ({ api: vi.fn(() => Promise.resolve({})), apiUpload: vi.fn(), apiBlob: vi.fn(), setRemoteAuth: vi.fn() }))
 vi.mock('../sheets.jsx', () => sheets)
 vi.mock('../components/Media.jsx', () => ({ Thumb: () => null }))
 vi.mock('../components/BodyMap.jsx', () => ({ default: () => null }))
@@ -351,5 +354,186 @@ describe('the Coach\'s snapshot and revert, which an applied assignment will use
     expect(s.week).toEqual({ 1: ['r_mine'] })
     expect(s.dayPlan).toEqual({ '2026-10-10': 'rest' })
     expect(dropped).toEqual({ '2026-10-09': 'r_as' })
+  })
+})
+
+/* ============================================================= FIT-003: the library's needs */
+
+import { catalogFingerprint, CATALOGS, CURRENT_CATALOG } from './library.js'
+import * as serverLibrary from '../../../api/trainer/library.js'
+import { sha256Hex } from '../lib/sha256.js'
+import { isCustomEx, registerCustom, EXIDX } from '../lib/exercises.js'
+import { mp4 as sampleMp4 } from '../../../api/trainer/test/samples.mjs'
+
+describe('FIT-003: the upstream surface the library and its UI use', () => {
+  it('exists, under the names the module calls', () => {
+    for (const fn of ['apiUpload', 'apiBlob', 'loadMediaIngest', 'limitsFrom', 'normalizeMediaRef', 'cleanUrl', 'searchExercises',
+      'exerciseNameFor', 'vocabText', 'fmtMB', 'useServerConfig', 'Button', 'Switch', 'TextArea', 'Segmented', 'Icon']) {
+      expect(adapter[fn], fn).toBeTypeOf('function')
+    }
+    for (const c of ['TextField', 'SearchField']) expect(adapter[c]?.$$typeof, c).toBe(Symbol.for('react.forward_ref'))
+    for (const list of ['CATALOGUE', 'BODYPARTS', 'ALL_EQUIPMENT']) expect(Array.isArray(adapter[list]), list).toBe(true)
+    expect(adapter.MB).toBe(1024 * 1024)
+    expect(useStore.getState()).toHaveProperty('config')
+  })
+
+  it('the media ingest: ingestMediaFile(file, limits, deps) → { media, blobs, warnings }, the MediaRef passing normalizeMediaRef and named by the blob\'s sha256', async () => {
+    const { ingestMediaFile } = await adapter.loadMediaIngest()
+    expect(ingestMediaFile).toBeTypeOf('function')
+    const file = new Blob([sampleMp4({ seconds: 5, bytes: 3000 })], { type: 'video/mp4' })
+    const out = await ingestMediaFile(file, adapter.limitsFrom({ media: { videoMB: 40, videoSec: 60 } }), {
+      probeVideo: async () => ({ width: 640, height: 360, duration: 5, poster: null }),
+    })
+    expect(Object.keys(out).sort()).toEqual(['blobs', 'media', 'warnings'])
+    expect(adapter.normalizeMediaRef(out.media)).toEqual(out.media)
+    expect(out.media).toMatchObject({ kind: 'video', mime: 'video/mp4', width: 640, height: 360, dur: 5 })
+    expect(out.blobs[0]).toMatchObject({ hash: out.media.hash, mime: 'video/mp4' })
+    expect(await sha256Hex(out.blobs[0].blob)).toBe(out.media.hash)
+    // The server's gate for a library exercise takes what the ingest makes.
+    expect(serverLibrary.cleanMediaRef(out.media)).toEqual(out.media)
+    // A video over the length the server allows is refused on the device, with the code the UI reads.
+    await expect(ingestMediaFile(new Blob([sampleMp4({ seconds: 90 })]), adapter.limitsFrom({ media: { videoSec: 60 } }), { probeVideo: async () => null }))
+      .rejects.toMatchObject({ code: 'too-long', sec: 60 })
+  })
+
+  it('limitsFrom({ media }): the server\'s caps over the defaults, the quota included', () => {
+    expect(adapter.limitsFrom({ media: { videoMB: 10, quotaMB: 500 } })).toMatchObject({ videoMB: 10, quotaMB: 500, imageMB: 2, videoSec: 60 })
+    expect(adapter.limitsFrom(null)).toMatchObject({ videoMB: 40, quotaMB: 200 })
+  })
+
+  it('apiUpload(path, blob, mime, { onProgress }): a PUT of the raw bytes to the path as given, query included, with progress', async () => {
+    const real = await vi.importActual('../lib/api.js')
+    const sent = {}
+    class XHR {
+      constructor() { this.upload = {}; this.headers = {} }
+      open(method, url) { sent.method = method; sent.url = url }
+      setRequestHeader(k, v) { this.headers[k] = v; sent.headers = this.headers }
+      send(body) {
+        sent.body = body
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 })
+        this.status = this.reply.status
+        this.responseText = JSON.stringify(this.reply.body)
+        this.onload()
+      }
+      getResponseHeader() { return null }
+    }
+    XHR.prototype.reply = { status: 201, body: { ok: true, hash: 'a'.repeat(64), usage: { bytes: 10, count: 1, quotaBytes: 0 } } }
+    const progress = []
+    const blob = new Blob(['0123456789'])
+    const ok = await real.apiUpload('/api/media/trainer?hash=' + 'a'.repeat(64), blob, 'video/mp4', { onProgress: (l, t) => progress.push([l, t]), XHR })
+    expect(ok.usage.count).toBe(1)
+    expect(sent.method).toBe('PUT')
+    expect(sent.url).toMatch(/\/api\/media\/trainer\?hash=a{64}$/)
+    expect(sent.headers['Content-Type']).toBe('video/mp4')
+    expect(sent.body).toBe(blob)
+    expect(progress).toEqual([[5, 10]])
+    XHR.prototype.reply = { status: 413, body: { error: 'your space for photos and videos is full', code: 'media-quota', usedMB: 1, quotaMB: 1 } }
+    await expect(real.apiUpload('/api/media/trainer?hash=x', blob, 'video/mp4', { XHR })).rejects.toMatchObject({ status: 413, code: 'media-quota' })
+  })
+
+  it('apiBlob(path, { expectSize }): a GET of the raw bytes; a refusal carries the server\'s status and code', async () => {
+    const real = await vi.importActual('../lib/api.js')
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      calls.push([url, init])
+      if (url.includes('missing')) return new Response(JSON.stringify({ error: 'no such file', code: 'media-missing' }), { status: 404 })
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Length': '3' } })
+    }
+    const b = await real.apiBlob('/api/media/trainer?hash=' + 'a'.repeat(64), { expectSize: 3, fetchImpl })
+    expect(new Uint8Array(await b.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    expect(calls[0][0]).toMatch(/\/api\/media\/trainer\?hash=a{64}$/)
+    expect(calls[0][1].cache).toBe('no-store')
+    await expect(real.apiBlob('/api/media/trainer?hash=missing', { fetchImpl })).rejects.toMatchObject({ status: 404, code: 'media-missing' })
+  })
+
+  it('the built-in catalogue is og1: every id in the form the server checks, and the fingerprint the library trusts', () => {
+    // When this fails, upstream changed the catalogue (v1.4.0 renumbers it). Write the id mapping
+    // in library.js resolveBuiltin and api/trainer/library.js builtinRef, or, if upstream only
+    // added exercises, add the new fingerprint to CATALOGS.og1. Never just update the number.
+    expect(CURRENT_CATALOG).toBe('og1')
+    expect(adapter.CATALOGUE.length).toBe(1324)
+    expect(adapter.CATALOGUE.every(e => serverLibrary.CATALOGS.og1.test(e.id))).toBe(true)
+    expect(CATALOGS.og1.fingerprints).toContain(catalogFingerprint(adapter.CATALOGUE))
+    expect(adapter.CATALOGUE.find(e => e.id === SQUAT).n).toBe('barbell full squat')
+  })
+
+  it('the catalogue\'s vocabulary and search: body parts and equipment translate, names resolve, search finds by name', () => {
+    for (const b of adapter.BODYPARTS) expect(adapter.vocabText(b)).toBeTypeOf('string')
+    for (const q of adapter.ALL_EQUIPMENT) expect(adapter.vocabText(q)).toBeTypeOf('string')
+    expect(adapter.exerciseNameFor(adapter.CATALOGUE.find(e => e.id === SQUAT))).toBe('barbell full squat')
+    expect(adapter.searchExercises(adapter.CATALOGUE, 'barbell full squat').map(e => e.id)).toContain(SQUAT)
+  })
+
+  it('the components render with the roles and classes the module\'s screens and tests rely on', () => {
+    const div = document.createElement('div')
+    const r = createRoot(div)
+    act(() => r.render(h(React.Fragment, null,
+      h(adapter.Switch, { checked: true, onChange: () => {}, 'aria-label': 'x' }),
+      h(adapter.Row, { title: 'T', onClick: () => {} }),
+      h(adapter.SearchField, { value: 'q', onChange: () => {}, onClear: () => {} }))))
+    expect(div.querySelector('[role="switch"]').getAttribute('aria-checked')).toBe('true')
+    expect(div.querySelector('button.lrow .lrow-t').textContent).toBe('T')
+    expect(div.querySelector('.searchf input')).toBeTruthy()
+    act(() => r.unmount())
+  })
+})
+
+describe('FIT-003: a delivered custom exercise (tx_ id, `src`) lives through what the marker lives through', () => {
+  const TX = 'tx_0123456789abcdef'
+  const src = (exRev = 1) => ({ trainer: 'u_trainer', exRev })
+  const delivered = (over = {}) => profile({
+    routines: [{ id: 'tr_0000000000000001', name: 'Assigned', _ts: 1000, [ASSIGNED]: mark(), ex: [{ id: TX, sets: 3, reps: 8 }] }],
+    customEx: [{ id: TX, n: 'Split squat', bp: 'upper legs', eq: 'dumbbell', custom: true, _ts: 1000, src: src(), media: { kind: 'image', hash: 'a'.repeat(64), mime: 'image/jpeg', size: 9, width: 1, height: 1, at: 1 } }],
+    week: {}, ...over,
+  })
+
+  it('is a custom exercise to upstream: registered by id, editable, and its slot resolves', () => {
+    const S = delivered()
+    registerCustom(S.customEx)
+    expect(EXIDX[TX].n).toBe('Split squat')
+    expect(isCustomEx(EXIDX[TX])).toBe(true)
+    registerCustom([])
+  })
+
+  it('(a) store, heal, restore and a unit switch keep `src`', () => {
+    useStore.setState({ S: delivered() })
+    useStore.getState().update(s => { s.customEx[0].n = 'Renamed by the client' })
+    expect(useStore.getState().S.customEx[0].src).toEqual(src())
+    expect(healCustomEx([{ id: TX, n: 'x', bp: 'back', src: src() }])[0].src).toEqual(src())
+    expect(restoredStateFor(clone(DEF), delivered()).customEx[0].src).toEqual(src())
+    expect(convertStateUnit(delivered(), 'lb').customEx[0].src).toEqual(src())
+  })
+
+  it('(b) the sync merge keeps `src`, field by field', () => {
+    const base = delivered()
+    const a = clone(base), b = clone(base)
+    a.customEx[0].n = 'Renamed on the phone'; a._ts = stampChange(base, a, 5000)
+    b.customEx[0].src = src(2); b._ts = stampChange(base, b, 6000)
+    for (const merged of [mergeStates(a, b), mergeStates(b, a)]) {
+      expect(merged.customEx[0].n).toBe('Renamed on the phone')
+      expect(merged.customEx[0].src).toEqual(src(2))
+    }
+  })
+
+  it('(c) the server\'s stamping keeps `src` and puts it back for a writer that never knew it', () => {
+    const next = delivered()
+    delete next.customEx[0].src
+    stampPut(delivered(), next, { overRead: true, stamped: false, now: 9000 })
+    expect(next.customEx[0].src).toEqual(src())
+  })
+
+  it('parsePlan resolves a slot naming the tx_ exercise from the bundle, and keeps `src` and the media ref', () => {
+    const p = parsePlan({ opengym_plan: 1, unit: 'kg', routines: delivered().routines, customEx: delivered().customEx }, 'kg')
+    expect(p.dropped).toBe(0)
+    expect(p.routines[0].ex[0].id).toBe(TX)
+    expect(p.customEx[0].src).toEqual(src())
+    expect(p.customEx[0].media.hash).toBe('a'.repeat(64))
+  })
+
+  it('upstream\'s media sweep counts a delivered exercise\'s file as referenced (api/media.js and media-refs.js agree)', async () => {
+    const { referencedHashes: serverRefs } = await import('../../../api/media.js')
+    const { referencedHashes: clientRefs } = await import('../lib/media-refs.js')
+    expect([...serverRefs(delivered())]).toEqual(['a'.repeat(64)])
+    expect([...clientRefs(delivered())]).toEqual(['a'.repeat(64)])
   })
 })
