@@ -16,6 +16,7 @@ import webpush from 'web-push';
 import * as coachConfig from './coach/config.js';
 import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
+import { trainerRoutes } from './trainer/routes.js';
 import { startCadence } from './coach/cadence.js';
 import { startWarmup } from './coach/warmup.js';
 import { dayReminderPush, nudgePush, restTimerPush, testPush } from './push-messages.js';
@@ -2490,6 +2491,7 @@ const routes = {
   // Routes live in coach/routes.js and are handed the helpers above rather than importing
   // them: they are closures over db and SECRET, and passing them in keeps that module free of
   // a cycle. Every one of them is inert while the feature is unconfigured.
+  ...trainerRoutes({ json, readBody, readSession, requireAdmin, audit, readStateStrict, UNREADABLE, atomicWrite, dataDir: DATA, sendPush, HttpError, media: MEDIA_ON ? MEDIA : null, sendMediaFile, users: () => db.users }),
   ...coachRoutes({ json, readBody, readSession, requireAdmin }),
 
   /* ---------- photos & videos ---------- */
