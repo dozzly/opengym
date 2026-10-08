@@ -67,5 +67,22 @@ export async function startServer(t, { env = {}, users = [{ id: 'u_one', name: '
     try { data = await r.json(); } catch { /* not JSON */ }
     return { status: r.status, body: data };
   };
+  /** A request with a raw body (an upload) or for a raw answer (a file): status, headers, bytes. */
+  h.raw = async (method, p, { uid, bytes, mime } = {}) => {
+    const r = await fetch(h.api + p, {
+      method,
+      headers: { ...(mime ? { 'Content-Type': mime } : {}), ...(uid ? { Cookie: cookieFor(uid) } : {}) },
+      ...(bytes ? { body: bytes } : {})
+    });
+    const buf = Buffer.from(await r.arrayBuffer());
+    let json = null;
+    try { json = JSON.parse(buf.toString('utf8')); } catch { /* a file */ }
+    return { status: r.status, headers: r.headers, bytes: buf, body: json };
+  };
+  /** The audit log's records, oldest first. */
+  h.audit = () => {
+    try { return fs.readFileSync(path.join(dataDir, 'audit.log'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); }
+    catch { return []; }
+  };
   return h;
 }
