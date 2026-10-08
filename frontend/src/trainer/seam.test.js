@@ -28,6 +28,21 @@ describe('App.jsx', () => {
   })
 })
 
+describe('Home.jsx', () => {
+  const home = read('../views/Home.jsx').split('\n')
+  it('imports the trainer card once, from the module\'s index, right after the first import', () => {
+    const at = home.findIndex(l => l === "import { TrainerHomeCard } from '../trainer/index.js'")
+    expect(at).toBe(1)
+    expect(home.filter(l => l.includes('TrainerHomeCard }')).length).toBe(1)
+  })
+  it('mounts the card once, directly above the gym check-in card', () => {
+    const at = home.findIndex(l => l === '    <TrainerHomeCard />')
+    expect(at).toBeGreaterThan(0)
+    expect(home.filter(l => l.includes('<TrainerHomeCard />')).length).toBe(1)
+    expect(home[at + 1]).toMatch(/^    \{\/\* Jump to the gym check-in cards/)
+  })
+})
+
 describe('Settings.jsx', () => {
   it('offers this fork as the source of the running version (AGPL-3.0 section 13), and nothing upstream\'s', () => {
     const settings = read('../views/Settings.jsx')

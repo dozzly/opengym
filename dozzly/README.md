@@ -53,13 +53,14 @@ Everything else in this repository is upstream's, unchanged.
 
 These are the only edits to upstream-owned files, all in one commit
 (`dozzly: seam - hook points for the trainer module`). The budget is about 15 changed lines
-(ADR 029, decision 3). This seam is 8: 6 added and 2 changed (`git diff --stat`: 5 files, +8 −2).
+(ADR 029, decision 3). This seam is 10: 8 added and 2 changed (`git diff --stat`: 6 files, +10 −2).
 
 | File | Lines | What and where |
 |---|---|---|
 | `api/server.js` | +2 | `import { trainerRoutes } from './trainer/routes.js';` on the line after the `coachRoutes` import. `...trainerRoutes({ … }),` on the line before `...coachRoutes({ json, readBody, readSession, requireAdmin }),`. |
 | `api/Dockerfile` | +1 | `COPY trainer ./trainer` after `COPY coach ./coach`. |
 | `frontend/src/App.jsx` | +3 | The import after the `react-router-dom` import. `<Route path="/trainer/*" …/>` directly after `<Routes>`. `<TrainerInbox />` between `<Toast />` and `<TimerFlash />`. |
+| `frontend/src/views/Home.jsx` | +2 | `import { TrainerHomeCard } from '../trainer/index.js'` after the first import (`useState` from `react`). `<TrainerHomeCard />` on the line before the gym check-in card's comment (`{/* Jump to the gym check-in cards`), so the card sits just above "At the gym". It is the way in to `#/trainer` from the installed app, which has no address bar; it renders nothing while the module is off. |
 | `frontend/src/views/Settings.jsx` | ±1 | The "Source code" link points at this repository ([licence](#licence-and-source-offer)). |
 | `frontend/src/views/Settings.reset.test.jsx` | ±1 | Upstream's test that pins that link's address (since v1.3.9) expects this repository, so upstream's own suite stays green. |
 
@@ -70,14 +71,17 @@ expected to need: `json`, `readBody`, `readSession`, `requireAdmin`, `audit`, `r
 rarely has to change. `api/trainer/test/seam.test.js` checks that every one of these is still
 declared in `server.js`.
 
-**No Settings entry, on purpose.** ADR 029 allows one Settings row. Any wording would be a new
+**No Settings entry, on purpose; a Home card instead.** ADR 029 allows one Settings row. Any wording would be a new
 `t()` string, and upstream's CI requires every such string in all 17 locale packs. Rendering a
 row from the module needs an import plus a line in a file upstream is redesigning right now
-(`views/settings-pages.js`, v1.3.11). The module's own pages are at `#/trainer`, and its
-inbox is mounted app-wide.
+(`views/settings-pages.js`, v1.3.11). The module's own pages are at `#/trainer`, reached from the card on Home, and its inbox is mounted
+app-wide. The card's words are the module's own (English), so no locale pack changes.
 
-**Durability.** `dozzly/seam-replay.sh v1.2.15 upstream/main` applies this exact seam at v1.2.15
-and rebases it across every later release. On 2026-10-08 the result was:
+**Durability.** `dozzly/seam-replay.sh v1.3.2 upstream/main` applies this exact seam at v1.3.2 (the
+first release with the gym check-in card Home's anchor needs) and rebases it across every later
+release. The Home lines alone were replayed v1.3.2 → main on 2026-10-08 (25 upstream commits to
+`Home.jsx`): clean. The earlier run of the rest of the seam, from v1.2.15 across every later
+release, gave this on 2026-10-08:
 
 | Release | Upstream commits | Result |
 |---|---|---|

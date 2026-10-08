@@ -52,6 +52,8 @@ export { ALL_EQUIPMENT } from '../lib/equipment.js'
 export { exerciseNameFor, t as vocabText } from '../lib/i18n-core.js'
 export { Section, Row, Button, Switch, TextField, TextArea, Segmented, SearchField } from '../components/ui.jsx'
 export { default as Icon } from '../components/Icon.jsx'
+// Home's card behaviour (click, Enter and Space), for the trainer card the module puts on Home.
+export { tappable } from '../lib/use-sheet-keyboard.js'
 
 /** Upstream's media ingest (lib/media-ingest.js: ingestMediaFile(file, limits) → { media, blobs,
  *  warnings }), split off and loaded on first use, as CustomMediaField.jsx loads it. */

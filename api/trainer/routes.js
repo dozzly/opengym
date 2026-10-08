@@ -207,7 +207,8 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
     'GET /api/trainer/capability': async (req, res) => {
       const user = readSession(req);
       if (!user) return json(res, 401, { error: 'not signed in' });
-      json(res, 200, { enabled: caps.enabled(user.id), allowed: caps.mayEnable(user.id) });
+      // `restricted`: TRAINER_ALLOW names who may be a trainer here; Home's card offers set-up only then.
+      json(res, 200, { enabled: caps.enabled(user.id), allowed: caps.mayEnable(user.id), restricted: caps.restricted });
     },
     'POST /api/trainer/capability': async (req, res) => {
       const user = readSession(req);

@@ -79,7 +79,7 @@ beforeEach(() => {
 
 describe('the upstream surface the adapter hands the module', () => {
   it('exists, under the names the module calls', () => {
-    for (const fn of ['useStore', 'api', 'parsePlan', 'pushSnapshot', 'revertLast', 'canRevert', 'deleteRoutine', 'Section', 'Row', 'useUser', 'currentProfile', 'updateProfile']) {
+    for (const fn of ['useStore', 'api', 'parsePlan', 'pushSnapshot', 'revertLast', 'canRevert', 'deleteRoutine', 'Section', 'Row', 'useUser', 'currentProfile', 'updateProfile', 'tappable', 'Icon']) {
       expect(adapter[fn], fn).toBeTypeOf('function')
     }
     expect(ASSIGNED).toBe('assigned')

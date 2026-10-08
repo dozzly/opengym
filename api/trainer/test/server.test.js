@@ -202,7 +202,7 @@ test('acceptance: the demo quota is enforced, per trainer, with upstream\'s answ
 
 test('acceptance: switching trainer tools on grants nothing, and off keeps the library but refuses writes', async t => {
   const h = await startServer(t, { env: { ...ON, TRAINER_ALLOW: `${ANNA},${BEA}` }, users: PEOPLE });
-  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: CAT })).body, { enabled: false, allowed: false });
+  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: CAT })).body, { enabled: false, allowed: false, restricted: true });
   assert.equal((await h.call('POST', '/api/trainer/capability', { uid: CAT, body: { enabled: true } })).status, 403);
   await h.call('POST', '/api/trainer/capability', { uid: ANNA, body: { enabled: true } });
   const made = await h.call('POST', '/api/trainer/library/exercises', { uid: ANNA, body: { baseRev: 0, exercise: exerciseBody() } });

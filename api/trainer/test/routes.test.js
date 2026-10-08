@@ -61,11 +61,18 @@ test('GET /api/trainer/status: 401 without a session, the module version with on
   assert.equal(MODULE_VERSION, '0.3.0');
 });
 
+test('capability: `restricted` says whether TRAINER_ALLOW names who may be a trainer', async t => {
+  const open = harness(t);
+  assert.deepEqual((await open.call('GET', '/api/trainer/capability', { uid: ANNA })).body, { enabled: false, allowed: true, restricted: false });
+  const named = harness(t, { env: { TRAINER_ALLOW: 'u_anna' } });
+  assert.equal((await named.call('GET', '/api/trainer/capability', { uid: BEA })).body.restricted, true);
+});
+
 test('capability: self-service, off by default, refused outside TRAINER_ALLOW, recorded without content', async t => {
   const h = harness(t, { env: { TRAINER_ALLOW: 'u_anna' } });
   assert.equal((await h.call('GET', '/api/trainer/capability')).status, 401);
-  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: ANNA })).body, { enabled: false, allowed: true });
-  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: BEA })).body, { enabled: false, allowed: false });
+  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: ANNA })).body, { enabled: false, allowed: true, restricted: true });
+  assert.deepEqual((await h.call('GET', '/api/trainer/capability', { uid: BEA })).body, { enabled: false, allowed: false, restricted: true });
   assert.equal((await h.call('POST', '/api/trainer/capability', { uid: ANNA, body: { enabled: 'yes' } })).status, 400);
   assert.deepEqual((await h.on(ANNA)).body, { enabled: true, allowed: true });
   const refused = await h.on(BEA);

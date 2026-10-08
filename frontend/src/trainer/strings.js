@@ -241,3 +241,15 @@ export function invalidText(e) {
   if (/^routines/.test(field)) return T.routines
   return T[field] || T.other
 }
+
+// The card on Home (TrainerHomeCard.jsx): the way in to #/trainer from the installed app.
+export const HOME_TEXT = {
+  trainer: 'Trainer',
+  trainerSub: clients => (clients === 0 ? 'Library and clients' : clients === 1 ? '1 client' : `${clients} clients`),
+  setUp: 'Set up your exercise library',
+  yourTrainer: 'Your trainer',
+  linkedSub: (name, mode) => `${name} · ${mode === 'co-managed' ? 'you review updates' : 'updates apply themselves'}`,
+  haveCode: 'Have a code from a trainer?',
+  haveCodeSub: 'Link with your trainer',
+  hide: 'Hide',
+}
