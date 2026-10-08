@@ -318,3 +318,15 @@ describe('trainer tools', () => {
     expect(data.exercises).toHaveLength(1)
   })
 })
+
+describe('demo usage line', () => {
+  it('shows KB below 1 MB, so a few small uploads do not read as nothing', async () => {
+    const { sizeText } = await import('./TrainerHome.jsx')
+    expect(sizeText(0)).toBe('0 MB')
+    expect(sizeText(1)).toBe('1 KB')
+    expect(sizeText(43246)).toBe('43 KB')
+    expect(sizeText(1048576)).toBe('1 MB')
+    expect(sizeText(500 * 1048576)).toBe('500 MB')
+    expect(sizeText(1.26 * 1048576)).toBe('1.3 MB')
+  })
+})
