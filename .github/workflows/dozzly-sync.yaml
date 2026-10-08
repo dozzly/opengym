@@ -1,0 +1,431 @@
+# dozzly/opengym: keeps the trainer branch on top of upstream's releases (ADR 029 in
+# dozzly/dozzly-cluster, docs/decisions/029-opengym-trainer-delivery.md). See dozzly/README.md.
+#
+# release     daily, and by hand: fast-forwards this fork's `main` to upstream `main`. When upstream
+#             has a newer v* release than dozzly/UPSTREAM, rebases dozzly/trainer onto it
+#             (`git rebase --onto <new> <old>`), runs upstream's own suites and the module's tests,
+#             builds ghcr.io/dozzly/opengym-api (upstream's default target) and -web as
+#             <version>-dozzly.<n>, pushes the branch and a build tag, and opens a digest-pin pull
+#             request against dozzly/dozzly-cluster. A conflict or a failing suite opens an issue
+#             here instead, and nothing is pushed, built or proposed.
+# main-check  nightly: the same rebase onto upstream `main` HEAD and the same tests, as an early
+#             warning of what the next release will bring. Never pushes, builds or deploys.
+#
+# Secrets:
+#   FORK_DEPLOY_KEY    private half of a deploy key of this repository with write access. Pushes
+#                      go over it, not GITHUB_TOKEN: a rebase onto upstream carries upstream's own
+#                      changes to .github/workflows/, and GitHub refuses a GITHUB_TOKEN push that
+#                      touches a workflow file. Required by `release`.
+#   CLUSTER_PR_TOKEN   fine-grained token for dozzly/dozzly-cluster only, with Contents and Pull
+#                      requests read/write. Optional: without it the pull request step is skipped
+#                      with a notice, and the run summary carries the digests to pin by hand.
+#
+# Scheduled runs only start from the default branch, so dozzly/trainer is this fork's default.
+name: "dozzly: follow upstream releases"
+
+on:
+  schedule:
+    - cron: '17 5 * * *'    # release
+    - cron: '43 1 * * *'    # main-check
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: release (follow the newest upstream release) or main-check (test against upstream main only)
+        type: choice
+        options: [release, main-check]
+        default: release
+      build:
+        description: "release: build and propose images even without a newer upstream release (first build, module changes)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # One release run at a time, whether scheduled or started by hand; the nightly check apart.
+  group: dozzly-sync-${{ (github.event.schedule == '43 1 * * *' || inputs.mode == 'main-check') && 'main-check' || 'release' }}
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/DuarteSantos8/openGym.git
+  BRANCH: dozzly/trainer
+  IMAGE_PREFIX: ghcr.io/dozzly/opengym
+  UPSTREAM_IMAGE_PREFIX: ghcr.io/duartesantos8/opengym
+  CLUSTER_REPO: dozzly/dozzly-cluster
+
+jobs:
+  release:
+    if: (github.event_name == 'schedule' && github.event.schedule == '17 5 * * *') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      issues: write
+      packages: write
+    env:
+      FORCE_BUILD: ${{ inputs.build == true }}
+    steps:
+      - name: Deploy key present
+        env:
+          KEY: ${{ secrets.FORK_DEPLOY_KEY }}
+        run: |
+          echo "plan" > "$RUNNER_TEMP/stage"
+          if [ -z "$KEY" ]; then
+            echo "::error::FORK_DEPLOY_KEY is not set. Add a write deploy key to this repository and its private half as this secret (dozzly/README.md, one-time setup)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          ssh-key: ${{ secrets.FORK_DEPLOY_KEY }}
+
+      - name: Fetch upstream
+        run: |
+          git config user.name "dozzly-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags --quiet "$UPSTREAM_URL" '+refs/heads/main:refs/remotes/upstream/main' '+refs/tags/v*:refs/tags/v*'
+          echo "REMOTE_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # The fork's main mirrors upstream's, fast-forward only. A main that has diverged is reported
+      # and left alone; it does not stop the trainer branch from following the release.
+      - name: Fast-forward main
+        run: |
+          git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' || true
+          if git rev-parse --verify --quiet origin/main >/dev/null && ! git merge-base --is-ancestor origin/main upstream/main; then
+            echo "::warning::this fork's main has commits upstream main does not; not fast-forwarded"
+            echo "- main: diverged from upstream main, left alone" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$(git rev-parse upstream/main)" != "$(git rev-parse --verify --quiet origin/main || true)" ]; then
+            git push origin 'refs/remotes/upstream/main:refs/heads/main'
+          fi
+
+      - name: Plan
+        id: plan
+        run: |
+          old=$(tr -d '[:space:]' < dozzly/UPSTREAM)
+          new=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          git rev-parse --verify --quiet "refs/tags/$old" >/dev/null || { echo "::error::dozzly/UPSTREAM names $old, which is not an upstream tag"; exit 1; }
+          rebase=false
+          if [ "$new" != "$old" ] && [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" = "$new" ]; then rebase=true; fi
+          build=$rebase
+          if [ "$FORCE_BUILD" = true ]; then build=true; fi
+          {
+            echo "old=$old"; echo "new=$new"; echo "rebase=$rebase"; echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+          echo "OLD=$old" >> "$GITHUB_ENV"; echo "NEW=$new" >> "$GITHUB_ENV"
+          echo "### dozzly sync: based on $old, newest upstream release $new (rebase: $rebase, build: $build)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rebase onto ${{ steps.plan.outputs.new }}
+        if: steps.plan.outputs.rebase == 'true'
+        run: |
+          echo "rebase onto $NEW" > "$RUNNER_TEMP/stage"
+          if ! git merge-base --is-ancestor "$OLD" "$NEW"; then
+            echo "upstream $NEW does not descend from $OLD" > "$RUNNER_TEMP/detail"
+            exit 1
+          fi
+          if ! git rebase --onto "$NEW" "$OLD" "$BRANCH"; then
+            { echo "Conflicting files:"; git diff --name-only --diff-filter=U | sed 's/^/- /'; } > "$RUNNER_TEMP/detail"
+            git rebase --abort
+            exit 1
+          fi
+          # The base moves into dozzly/UPSTREAM as a fixup of the commit that last set it, so the
+          # branch stays the release, the seam commit and the module's commits.
+          printf '%s\n' "$NEW" > dozzly/UPSTREAM
+          git commit --quiet --fixup="$(git log -n 1 --format=%H -- dozzly/UPSTREAM)" -- dozzly/UPSTREAM
+          GIT_SEQUENCE_EDITOR=: git rebase --quiet --interactive --autosquash "$NEW"
+          git log --oneline "$NEW..HEAD" | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v7
+        if: steps.plan.outputs.build == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            api/package-lock.json
+            mcp/package-lock.json
+            package-lock.json
+
+      - name: Upstream suites and module tests
+        if: steps.plan.outputs.build == 'true'
+        env:
+          DOZZLY_REPORT: ${{ runner.temp }}/tests.md
+        run: |
+          echo "tests" > "$RUNNER_TEMP/stage"
+          sh dozzly/test.sh && rc=0 || rc=$?
+          cat "$DOZZLY_REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cp "$DOZZLY_REPORT" "$RUNNER_TEMP/detail"
+          exit "$rc"
+
+      - name: Build tag
+        if: steps.plan.outputs.build == 'true'
+        run: |
+          echo "build tag" > "$RUNNER_TEMP/stage"
+          ver=$(tr -d '[:space:]' < dozzly/UPSTREAM); ver=${ver#v}
+          n=$(git ls-remote --tags origin "refs/tags/dozzly/build/${ver}-dozzly.*" | sed -n "s#.*refs/tags/dozzly/build/${ver}-dozzly\.\([0-9][0-9]*\)\$#\1#p" | sort -n | tail -n 1)
+          tag="${ver}-dozzly.$(( ${n:-0} + 1 ))"
+          { echo "VERSION=$ver"; echo "TAG=$tag"; echo "BUILD_N=$(( ${n:-0} + 1 ))"; echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "SHA=$(git rev-parse HEAD)"; } >> "$GITHUB_ENV"
+
+      # Upstream's api-image job in miniature: the default target boots, serves, and carries the
+      # module, off unless TRAINER is set.
+      - name: Smoke-test the api image
+        if: steps.plan.outputs.build == 'true'
+        run: |
+          echo "api image smoke test" > "$RUNNER_TEMP/stage"
+          docker build --quiet --target default -t smoke-api ./api >/dev/null
+          probe() { for _ in $(seq 1 30); do curl -fsS "http://localhost:$1/api/config" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
+          docker run -d --name api-off -e DATA_DIR=/data -p 3000:3000 smoke-api
+          docker run -d --name api-on -e DATA_DIR=/data -e TRAINER=1 -p 3001:3000 smoke-api
+          probe 3000 && probe 3001
+          curl -fsS http://localhost:3000/api/config | grep -q '"invite_only"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/trainer/status)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/api/trainer/status)" = 401
+          docker run --rm smoke-api node -e 'import("@anthropic-ai/claude-agent-sdk").then(()=>process.exit(1),()=>process.exit(0))'
+          docker rm -f api-off api-on
+
+      - uses: docker/setup-qemu-action@v4
+        if: steps.plan.outputs.build == 'true'
+      - uses: docker/setup-buildx-action@v4
+        if: steps.plan.outputs.build == 'true'
+      - uses: docker/login-action@v4.6.0
+        if: steps.plan.outputs.build == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mark the image stage
+        if: steps.plan.outputs.build == 'true'
+        run: echo "image build" > "$RUNNER_TEMP/stage"
+
+      # The default target, named: what upstream publishes untargeted and the cluster runs today.
+      # Named so a reordering of upstream's stages fails here instead of shipping the Coach target.
+      - name: Build and push the api image
+        id: api
+        if: steps.plan.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          target: default
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}-api:${{ env.TAG }}
+          build-args: |
+            VERSION=${{ env.TAG }}
+            VCS_REF=${{ env.SHA }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}/pkgs/container/opengym-api
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/${{ env.BRANCH }}/dozzly/README.md
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+
+      - name: Build and push the web image
+        id: web
+        if: steps.plan.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}-web:${{ env.TAG }}
+          build-args: |
+            VERSION=${{ env.TAG }}
+            VCS_REF=${{ env.SHA }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            APP_BUILD=dozzly.${{ env.BUILD_N }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}/pkgs/container/opengym-web
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/${{ env.BRANCH }}/dozzly/README.md
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+
+      # The branch and a tag naming the exact source of these images (AGPL-3.0 s.13), in one
+      # atomic push. The lease fails it if anyone pushed to the branch since this run read it.
+      - name: Push the branch and the build tag
+        if: steps.plan.outputs.build == 'true'
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          echo "push" > "$RUNNER_TEMP/stage"
+          git push --atomic --force-with-lease="refs/heads/$BRANCH:$REMOTE_HEAD" origin \
+            "HEAD:refs/heads/$BRANCH" "HEAD:refs/tags/dozzly/build/$TAG"
+          {
+            echo ""
+            echo "Built \`$TAG\` from $SHA:"
+            echo "- \`$IMAGE_PREFIX-api:$TAG@$API_DIGEST\`"
+            echo "- \`$IMAGE_PREFIX-web:$TAG@$WEB_DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open the digest-pin pull request in dozzly/dozzly-cluster
+        if: steps.plan.outputs.build == 'true'
+        env:
+          CLUSTER_PR_TOKEN: ${{ secrets.CLUSTER_PR_TOKEN }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          echo "cluster pull request" > "$RUNNER_TEMP/stage"
+          if [ -z "$CLUSTER_PR_TOKEN" ]; then
+            echo "::notice::CLUSTER_PR_TOKEN is not set: no pull request opened. Pin the digests in the summary by hand."
+            exit 0
+          fi
+          # The rollback: upstream's own images of the same version, if upstream published them.
+          up_api=$(docker buildx imagetools inspect "$UPSTREAM_IMAGE_PREFIX-api:$VERSION" --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || true)
+          up_web=$(docker buildx imagetools inspect "$UPSTREAM_IMAGE_PREFIX-web:$VERSION" --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || true)
+          export GIT_TERMINAL_PROMPT=0
+          # Single quotes on purpose: the helper expands the token itself, so it is never on a command
+          # line or in a git config (the way upstream's mirror.yml hands over its token).
+          # shellcheck disable=SC2016
+          helper='!f() { echo "username=x-access-token"; echo "password=$CLUSTER_PR_TOKEN"; }; f'
+          git -c credential.helper="$helper" clone --quiet --depth 1 "https://github.com/$CLUSTER_REPO.git" "$RUNNER_TEMP/cluster"
+          cd "$RUNNER_TEMP/cluster"
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          tag = os.environ["TAG"]
+          deploy = Path("apps/fitness/deployment.yaml")
+          text = deploy.read_text()
+          for name, digest in (("api", os.environ["API_DIGEST"]), ("web", os.environ["WEB_DIGEST"])):
+              ref = f"{os.environ['IMAGE_PREFIX']}-{name}:{tag}@{digest}"
+              text, count = re.subn(rf"ghcr\.io/(?:duartesantos8|dozzly)/opengym-{name}(?::[^\s@]+)?@sha256:[0-9a-f]{{64}}", ref, text)
+              if count != 1:
+                  raise SystemExit(f"expected one opengym-{name} image in {deploy}, found {count}")
+          deploy.write_text(text)
+          # The component's image list names the repository the deployment pulls from.
+          comp = Path("apps/fitness/component.yaml")
+          if comp.exists():
+              comp.write_text(re.sub(r"(repository: )ghcr\.io/duartesantos8/(opengym-(?:api|web))\b", r"\1ghcr.io/dozzly/\2", comp.read_text()))
+          PY
+          if git diff --quiet; then
+            echo "::notice::apps/fitness already pins these digests"
+            exit 0
+          fi
+          head="opengym/fork-$TAG"
+          git switch --quiet -c "$head"
+          git -c user.name="dozzly-sync[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -am "fitness: pin dozzly/opengym $TAG"
+          git -c credential.helper="$helper" push --quiet origin "HEAD:refs/heads/$head"
+          {
+            echo "Pins the openGym fork build \`$TAG\` (upstream $NEW plus the trainer module, ADR 029, FIT-006)."
+            echo
+            echo "- Source: https://github.com/$GITHUB_REPOSITORY/tree/dozzly/build/$TAG ($SHA)"
+            echo "- api: \`$IMAGE_PREFIX-api:$TAG@$API_DIGEST\` (upstream's default target)"
+            echo "- web: \`$IMAGE_PREFIX-web:$TAG@$WEB_DIGEST\`"
+            echo "- Upstream suites, module tests and the api image smoke test passed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "The trainer module stays off: the deployment does not set \`TRAINER\`."
+            echo
+            echo "Rollback: re-pin upstream's images of the same version${up_api:+ (\`$UPSTREAM_IMAGE_PREFIX-api:$VERSION@$up_api\`, \`$UPSTREAM_IMAGE_PREFIX-web:$VERSION@$up_web\`)}. Never an older upstream version than $VERSION. Take a backup first, as apps/fitness/README.md requires."
+          } > "$RUNNER_TEMP/pr.md"
+          GH_TOKEN="$CLUSTER_PR_TOKEN" gh pr create --repo "$CLUSTER_REPO" --base main --head "$head" \
+            --title "fitness: pin dozzly/opengym $TAG" --body-file "$RUNNER_TEMP/pr.md"
+
+      - name: Report a failure as an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          stage=$(cat "$RUNNER_TEMP/stage" 2>/dev/null || echo "setup")
+          title="dozzly sync failed: ${NEW:-upstream} (${stage})"
+          {
+            echo "The release sync stopped at **${stage}**. Nothing was pushed to \`$BRANCH\` and no image or pull request was made for this run, unless the stage is \`cluster pull request\`."
+            echo
+            echo "- Based on: \`${OLD:-?}\`; newest upstream release: \`${NEW:-?}\`"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            cat "$RUNNER_TEMP/detail" 2>/dev/null || true
+            echo
+            echo "To fix by hand: dozzly/README.md, \"When the sync opens an issue\"."
+          } > "$RUNNER_TEMP/issue.md"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty' || true)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
+          else gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"; fi \
+            || echo "::error::could not open an issue (are Issues enabled on this fork?)"
+
+  main-check:
+    if: (github.event_name == 'schedule' && github.event.schedule == '43 1 * * *') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'main-check')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: write
+    env:
+      TITLE: "dozzly early warning: upstream main breaks the trainer branch"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Rebase onto upstream main (not pushed)
+        id: rebase
+        run: |
+          echo "rebase onto upstream main" > "$RUNNER_TEMP/stage"
+          git config user.name "dozzly-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags --quiet "$UPSTREAM_URL" '+refs/heads/main:refs/remotes/upstream/main' '+refs/tags/v*:refs/tags/v*'
+          old=$(tr -d '[:space:]' < dozzly/UPSTREAM)
+          echo "OLD=$old" >> "$GITHUB_ENV"
+          echo "MAIN=$(git rev-parse --short upstream/main)" >> "$GITHUB_ENV"
+          if ! git rebase --onto upstream/main "$old" "$BRANCH"; then
+            { echo "Conflicting files:"; git diff --name-only --diff-filter=U | sed 's/^/- /'; } > "$RUNNER_TEMP/detail"
+            git rebase --abort
+            exit 1
+          fi
+          echo "rebased $(git rev-list --count "$old..upstream/main") upstream commits past $old cleanly" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            api/package-lock.json
+            mcp/package-lock.json
+            package-lock.json
+
+      - name: Upstream suites and module tests
+        env:
+          DOZZLY_REPORT: ${{ runner.temp }}/tests.md
+        run: |
+          echo "tests" > "$RUNNER_TEMP/stage"
+          sh dozzly/test.sh && rc=0 || rc=$?
+          cat "$DOZZLY_REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cp "$DOZZLY_REPORT" "$RUNNER_TEMP/detail"
+          exit "$rc"
+
+      - name: Close the warning once main passes again
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          n=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty' || true)
+          if [ -n "$n" ]; then gh issue close "$n" --comment "Upstream main $MAIN rebases and passes again." || true; fi
+
+      - name: Report as an early-warning issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          stage=$(cat "$RUNNER_TEMP/stage" 2>/dev/null || echo "setup")
+          {
+            echo "Early warning only: nothing was pushed, built or deployed. The trainer branch, rebased onto upstream main \`${MAIN:-?}\` (past \`${OLD:-?}\`), failed at **${stage}**. The next upstream release will likely do the same."
+            echo
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            cat "$RUNNER_TEMP/detail" 2>/dev/null || true
+          } > "$RUNNER_TEMP/issue.md"
+          existing=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty' || true)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
+          else gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"; fi \
+            || echo "::error::could not open an issue (are Issues enabled on this fork?)"
