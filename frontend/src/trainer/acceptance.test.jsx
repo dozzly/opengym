@@ -113,8 +113,18 @@ async function mount(path = '/trainer') {
 }
 function unmount() { if (root) act(() => root.unmount()); host?.remove(); root = null; host = null }
 const settle = async (n = 30) => { for (let i = 0; i < n; i++) await act(() => new Promise(r => setTimeout(r, 2))) }
-/** What the inbox does on focus, on becoming visible and every 60 s: look now. */
-const inboxLooks = async () => { await act(async () => requestCheck()); await settle() }
+/** Until `cond()` holds (real HTTP takes its time; under a loaded test run more of it). */
+async function waitFor(cond, ms = 15000) {
+  const end = Date.now() + ms
+  while (!cond()) {
+    if (Date.now() > end) throw new Error('timed out waiting for ' + cond)
+    await act(() => new Promise(r => setTimeout(r, 10)))
+  }
+}
+/** What the inbox does on focus, on becoming visible and every 60 s: look now, and wait for what
+ *  the look should bring about (or a moment, when it should bring about nothing). */
+const inboxLooks = async until => { await act(async () => requestCheck()); if (until) await waitFor(until); else await settle(60) }
+const toasted = msg => () => useUI.getState().toastMsg === msg
 const buttons = () => [...host.querySelectorAll('button')]
 const button = text => buttons().find(b => b.textContent.trim() === text || b.querySelector('.lrow-t')?.textContent === text)
 const click = async el => { expect(el, 'element to click').toBeTruthy(); await act(async () => el.click()); await settle() }
@@ -183,7 +193,7 @@ describe('FIT-004 acceptance on the real server', () => {
     expect(ok(await h.http('POST', '/api/trainer/assignments/publish', { uid: ANNA.id, body: { link: link.id, baseRev: 0 } }), 409).code).toBe('conflict')
 
     // 4. Cat's app picks it up and applies it on its own, with an Undo on the toast.
-    await inboxLooks()
+    await inboxLooks(toasted(T.applied(ANNA.name)))
     expect(useUI.getState().toastMsg).toBe(T.applied(ANNA.name))
     expect(useUI.getState().toastAction?.label).toBe(T.undo)
     let S = currentProfile()
@@ -230,7 +240,7 @@ describe('FIT-004 acceptance on the real server', () => {
     r = ok(await h.http('PUT', '/api/trainer/library/programmes', { uid: ANNA.id, body: { baseRev: r.rev, id: prog.id, programme: programmeBody('Block 1', [{ id: ex.id, sets: 4, reps: 6, weight: 22.5 }, { id: '0043', catalog: 'og1', sets: 3, reps: 5, weight: 85 }]) } }))
     const p2 = await publish(link.id, prog.id)
     expect(p2.rev).toBe(2)
-    await inboxLooks()
+    await inboxLooks(toasted(T.applied(ANNA.name)))
     S = currentProfile()
     expect(S.routines.map(r => r.id)).toEqual(['r_mine', R1])
     expect(routine(S, R1)).toMatchObject({ [ASSIGNED]: { rev: 2 }, ex: [{ id: ex.id, sets: 4, reps: 6, weight: 22.5 }, { id: '0043', sets: 3, reps: 5, weight: 85 }] })
@@ -278,13 +288,13 @@ describe('FIT-004 acceptance on the real server', () => {
     expect(ok(await h.http('GET', '/api/trainer/library', { uid: ANNA.id })).exercises).toHaveLength(1)
 
     // Co-managed: a card with the note and what would change. Discard changes nothing.
-    await inboxLooks()
+    await inboxLooks(() => !!host.querySelector('.trainer-update'))
     const card = host.querySelector('.trainer-update')
     expect(card.textContent).toContain(T.updateTitle(ANNA.name))
     expect(card.textContent).toContain('For Dan')
     expect(card.textContent).toContain(T.newRoutine('Day 1'))
     await click([...card.querySelectorAll('button')].find(b => b.textContent === T.discard))
-    expect(host.querySelector('.trainer-update')).toBeNull()
+    await waitFor(() => !host.querySelector('.trainer-update'))
     const kept = clone(currentProfile())
     expect(kept.routines).toEqual(danBefore.routines)
     expect(kept.customEx).toEqual(danBefore.customEx)
@@ -297,8 +307,9 @@ describe('FIT-004 acceptance on the real server', () => {
 
     // A new revision: Apply this time.
     await publish(danLink.id, prog.id, 'Second try')
-    await inboxLooks()
+    await inboxLooks(() => host.querySelector('.trainer-update')?.textContent.includes('Second try'))
     await click(button(T.apply))
+    await waitFor(toasted(T.applied(ANNA.name)))
     expect(currentProfile().routines.map(r => r.id)).toEqual(['r_dan', 'tr_0000000000000001'])
     expect((await h.http('GET', `/api/media/${sha(video)}`, { uid: DAN.id })).status).toBe(200)
     await sync()
@@ -328,8 +339,9 @@ describe('FIT-004 acceptance on the real server', () => {
       ok(await h.http('POST', '/api/trainer/links/accept', { uid: user.id, body: { code: await newInvite(), mode: 'trainer-managed' } }), 201)
       const link = ok(await h.http('GET', '/api/trainer/links', { uid: user.id })).asClient
       await publish(link.id, prog.id)
+      useUI.setState({ toastMsg: '', toastAction: null })
       await mount()
-      await inboxLooks()
+      await inboxLooks(toasted(T.applied(ANNA.name)))
       await sync()
       const R1 = 'tr_0000000000000001'
       expect(routine(currentProfile(), R1)).toBeTruthy()

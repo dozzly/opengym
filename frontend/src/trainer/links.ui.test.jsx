@@ -358,6 +358,28 @@ describe('the inbox', () => {
     expect(host.querySelector('.trainer-update')).toBeNull()
   })
 
+  it('a look asked for while one is in flight runs after it: an update published meanwhile is not missed', async () => {
+    connect()
+    const { prog } = await annasLibrary()
+    const link = await linkCat('co-managed')
+    await mount(CAT, '/home', mine())
+    const real = api.getMockImplementation()
+    let release = null
+    // The next answer is read now (nothing published yet) and handed over only later.
+    api.mockImplementation(async (p, o) => {
+      const r = await real(p, o)
+      if (p === '/api/trainer/assignment' && release === null) await new Promise(res => { release = res })
+      return r
+    })
+    act(() => requestCheck())
+    await settle()
+    await publish(link.id, prog.id, 'Meanwhile')
+    act(() => requestCheck())
+    await act(async () => release())
+    await settle()
+    expect(host.querySelector('.trainer-update')?.textContent).toContain('Meanwhile')
+  })
+
   it('starts once the store\'s first pull is done', async () => {
     connect()
     const { prog } = await annasLibrary()
