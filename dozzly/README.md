@@ -21,6 +21,7 @@ Everything else in this repository is upstream's, unchanged.
 - [The seam](#the-seam)
 - [Switching the module on and off](#switching-the-module-on-and-off)
 - [The trainer library (FIT-003)](#the-trainer-library-fit-003)
+- [Links, delivery and progress (FIT-004)](#links-delivery-and-progress-fit-004)
 - [Data contract](#data-contract)
 - [How the sync works](#how-the-sync-works)
 - [When the sync opens an issue](#when-the-sync-opens-an-issue)
@@ -43,8 +44,8 @@ Everything else in this repository is upstream's, unchanged.
 
 | Path | What it is |
 |---|---|
-| `api/trainer/` | Server half. `routes.js` is a route factory like `api/coach/routes.js`. `library.js` validates library data; `store.js` and `capability.js` are its files; `demo-media.js` runs upstream's media store for demo files. Tests are in `test/`; `media.contract.test.js` and `seam.test.js` pin the upstream internals the server half uses. |
-| `frontend/src/trainer/` | App half. `adapter.js` is the only file here that reaches into upstream internals; `contract.test.js` pins those internals. `library.js` mirrors the server's validation and resolves built-in exercises. `snapshot.js` is the durable-snapshot core. The screens are `TrainerRoot.jsx`, `TrainerHome.jsx`, `ExerciseEditor.jsx`, `ProgrammeEditor.jsx` and `DemoField.jsx`, plus `TrainerInbox.jsx`. |
+| `api/trainer/` | Server half. `routes.js` is a route factory like `api/coach/routes.js`; `link-routes.js` holds the FIT-004 routes it adds. `library.js` validates library data; `store.js` and `capability.js` are its files; `demo-media.js` runs upstream's media store for demo files. FIT-004: `links.js` (invites, links, the code limiter), `assignments.js` (drafts, published revisions, acknowledgements), `snapshot.js` (the server's port of the snapshot, with `catalog-og1.js`, og1's exercise ids), `progress.js` (the read-only progress view) and `cleanup.js` (data of deleted profiles). Tests are in `test/`; `media.contract.test.js` and `seam.test.js` pin the upstream internals the server half uses. |
+| `frontend/src/trainer/` | App half. `adapter.js` is the only file here that reaches into upstream internals; `contract.test.js` pins those internals. `library.js` mirrors the server's validation and resolves built-in exercises. `snapshot.js` is the durable-snapshot core; `snapshot-parity.test.js` pins the server's port to it. FIT-004: `delivery.js` (apply, discard, undo, demo copies), `diff.js` and `DiffList.jsx`. The screens are `TrainerRoot.jsx`, `TrainerHome.jsx`, `YourTrainer.jsx`, `Clients.jsx`, `ClientDetail.jsx`, `ExerciseEditor.jsx`, `ProgrammeEditor.jsx` and `DemoField.jsx`, plus `TrainerInbox.jsx`. `acceptance.test.jsx` runs FIT-004's acceptance against the real server. |
 | `dozzly/` | This file. `UPSTREAM` is the release the branch is based on. `test.sh` runs every suite. `seam-replay.sh` is the seam durability check. |
 | `.github/workflows/dozzly-sync.yaml` | The sync, test, build and deploy-proposal workflow. |
 
@@ -103,8 +104,10 @@ The module is off unless the api container has `TRAINER=1` (or `true`, `yes`, `o
 
 **On:** `GET /api/trainer/status` answers `401` when signed out, and
 `{ "enabled": true, "module": "<version>" }` when signed in. The trainer library's routes are
-added too ([below](#the-trainer-library-fit-003)). Turning the module on does not, by itself, let
-anyone do anything. Each user who wants trainer tools turns them on for themselves at `#/trainer`.
+added too ([below](#the-trainer-library-fit-003)), and the routes for links, assignments and
+progress ([FIT-004](#links-delivery-and-progress-fit-004)). Turning the module on does not, by
+itself, let anyone do anything. Each user who wants trainer tools turns them on for themselves at
+`#/trainer`, and a trainer reaches a client only through a link that client accepted.
 
 **Storage.** Everything the module stores is under `DATA_DIR/trainer/`. Nothing is created there
 until someone writes. The module never writes `state-<uid>.json`, `db.json` or anything under
@@ -113,8 +116,8 @@ until someone writes. The module never writes `state-<uid>.json`, `db.json` or a
 ## The trainer library (FIT-003)
 
 A trainer keeps reusable exercises and programmes in a library of their own, with a demo video or
-photo per exercise. FIT-003 covers only the trainer's own library. There are no links and no
-client access yet; both arrive with FIT-004.
+photo per exercise. This section covers the trainer's own library; links, delivery to clients and
+progress are [FIT-004](#links-delivery-and-progress-fit-004).
 
 ### Environment
 
@@ -148,9 +151,10 @@ gets `409 { error: 'conflict', rev, wid, library }`, which includes the current 
 - Every library and upload route needs a session (`401` without one) and trainer tools turned on
   (`403 trainer-off` otherwise). Turned off, the library stays on disk, and reads and writes are
   refused.
-- No route reads another user's data.
+- No library route reads another user's data.
 - Reading a demo file is decided by one function, `canReadDemo(viewer, trainer, hash)` in
-  `api/trainer/demo-media.js`. In FIT-003 it allows only the owning trainer, with tools on.
+  `api/trainer/demo-media.js`. It allows the owning trainer, with tools on, and (FIT-004) the
+  client of an active link with that trainer, for a hash a published snapshot of that link names.
   Anyone else gets the same `404 media-missing` that a file that does not exist gets.
 
 The two media routes live under `/api/media/` because that is the only nginx location that
@@ -202,11 +206,13 @@ not clamped.
 **Demo files** are a separate security domain from private media. The module runs its own
 instance of upstream's `createMediaStore` on `DATA_DIR/trainer/media/`, with upstream's modes
 (0700 directories, 0600 files), checks and caps, and a quota per trainer. Its view of a trainer's
-"state" is that trainer's library, archived exercises included. As a result:
-- Upstream's sweep (hourly, and five minutes after boot) keeps every file the library refers to.
+"state" is that trainer's library, archived exercises included, plus every demo a retained
+published snapshot names (FIT-004). As a result:
+- Upstream's sweep (hourly, and five minutes after boot) keeps every file the library or a
+  published revision refers to.
 - A file nothing refers to is removed after upstream's grace period (`MEDIA_GC_GRACE_DAYS`, 14
   days). Under quota pressure that becomes an hour, as in upstream.
-- A library that is missing or unreadable keeps every file.
+- A library or assignment that is missing or unreadable keeps every file.
 - A folder whose user is not in `db.json` is left alone.
 
 **Audit.** `audit.log` gets these events:
@@ -236,26 +242,193 @@ trainer's library keeps its ids and revisions. After a restore:
 To remove the module's data, delete `DATA_DIR/trainer/` after taking a backup.
 
 When an admin deletes a profile, upstream removes that profile's state and uploads, but not the
-profile's trainer data. The sweep leaves that data alone, as an orphan. Remove
-`DATA_DIR/trainer/library/<uid>.json` and `DATA_DIR/trainer/media/<uid>/` by hand if they are not
-wanted. FIT-004 should do this itself.
+profile's trainer data. Since FIT-004 the module's hourly clean-up removes it
+([below](#clean-up-of-deleted-profiles)).
 
-### The durable snapshot (for FIT-004)
+### The durable snapshot
 
-`frontend/src/trainer/snapshot.js` holds the core that FIT-004 delivers:
+`frontend/src/trainer/snapshot.js` holds the core that FIT-004 delivers. The server publishes
+with its own port, `api/trainer/snapshot.js`; `snapshot-parity.test.js` runs both over the same
+libraries and wants byte-identical JSON.
 - `snapshotProgramme(library, programmeId)` deep-copies one programme:
-  - Its routines, in upstream's shape, each with `assigned: { by, assignmentId, rev }`.
+  - Its routines, in upstream's shape, each with `assigned: { by, assignmentId, rev }`
+    (`assignmentId` is the link id).
+  - A built-in slot keeps its catalogue (`{ id: '0043', catalog: 'og1', … }`): a snapshot may be
+    applied long after it was taken, by an app whose catalogue has moved on.
   - Each library exercise they use, as a full custom exercise under its `tx_` id: `custom: true`,
     the MediaRef, and `src: { trainer, exRev }`.
+  - `unresolved` lists slots that cannot be delivered: a library exercise that is gone, or a
+    built-in id its catalogue does not hold (the server checks against og1's id list,
+    `catalog-og1.js`; the app against its catalogue). Publishing refuses any.
   - Later library edits or archiving do not change a snapshot that was already taken.
+- `deliverable(snapshot, unit)` is what applying would write: each built-in slot resolved in this
+  app's catalogue with `resolveBuiltin()` (or left out and counted in `dropped`, never read as
+  another exercise), then upstream's `parsePlan`.
 - `applySnapshot(state, snapshot, { previousRoutineIds })`:
   - Replaces only the routines recorded for the previous revision, in place, keeping their ids.
+    A routine this same trainer delivered before (the snapshot's id, the trainer's marker; a copy
+    gets a new id) is replaced in place too: what a new link to the same trainer, or an undone
+    revision, leaves behind.
   - Removes routines dropped from the new revision, using upstream's `deleteRoutine`.
   - Adds or updates the custom exercises and never removes one.
   - Converts units through `parsePlan`.
   - Touches nothing else.
   - If a routine or exercise id in the snapshot already belongs to something the module did not
     deliver, it refuses before changing anything.
+
+## Links, delivery and progress (FIT-004)
+
+A trainer reaches a client only through a link the client accepted. The link carries exactly two
+scopes, `read_progress` and `write_assigned_plan`, and the client's choice of mode. The trainer
+publishes revisions of a plan; the client's own app applies them and syncs them as it syncs
+everything else. The server never writes a client's `state-<uid>.json`, `db.json` or anything
+under `DATA_DIR/uploads/` (ADR 029, decision 5).
+
+### Consent
+
+- **Invites.** A trainer with tools on creates a one-time code: `PT-` and 12 base32 characters
+  (60 bits) from crypto. It is shown once. The server keeps only its SHA-256 and an expiry seven
+  days out. A trainer has at most ten open invites, and can revoke any of them.
+- **Accepting.** Any signed-in user can accept a code, choosing:
+  - **co-managed**: each plan update is offered for the client to apply or discard;
+  - **trainer-managed**: updates are applied as they arrive, each with an Undo;
+  - whether to share body weight (off by default).
+
+  Refused: the trainer's own code (`self-link`), a code that is used, revoked, expired or unknown,
+  a trainer who switched tools off since (`trainer-unavailable`), and a client who already has a
+  trainer (`409 has-trainer`: one trainer per client in the MVP). The invite is consumed in the
+  same synchronous read-check-write that creates the link, so a code links once. Wrong codes are
+  counted per user, ten an hour, then `429` with `Retry-After`, whatever the code.
+- **The link.** Either side ends it at once. The client can switch the mode and the body-weight
+  switch. An ended link stays on record (ids and times, `revokedBy`) and grants nothing; its
+  assignment file is removed. The client keeps the plan it applied, as ordinary routines.
+
+### Routes
+
+All under the same `TRAINER` switch: off, each is the plain 404. The dispatcher matches exact
+paths, so ids go in the body or the query string.
+
+| Route | Who | What it does |
+|---|---|---|
+| `POST /api/trainer/invites` | trainer | `{ code, invite: { id, createdAt, expiresAt } }`. `409 too-many-invites` past ten. |
+| `GET /api/trainer/invites` | trainer | The open invites, without codes. |
+| `DELETE /api/trainer/invites` | trainer | `?id=` (or `{ id }`): revokes one. |
+| `POST /api/trainer/links/accept` | signed in | `{ code, mode, shareBodyweight }` → `201 { link }`. |
+| `GET /api/trainer/links` | signed in | `{ asTrainer: [{ id, client: { id, name }, mode, shareBodyweight, published, applied }], asClient: { id, trainer: { id, name }, mode, shareBodyweight } \| null }`. |
+| `POST /api/trainer/links/update` | client | `{ id, mode?, shareBodyweight? }`. |
+| `POST /api/trainer/links/revoke` | either side | `{ id }`. |
+| `GET /api/trainer/assignments?link=` | trainer | `{ link, rev, wid, draft, published, applied, programme, preview, libraryRev }`. `preview` is the server-built snapshot the draft would publish. |
+| `PUT /api/trainer/assignments/draft` | trainer | `{ link, programmeId, note, baseRev }`: a non-archived programme of the trainer's library (or `null` to clear). |
+| `POST /api/trainer/assignments/publish` | trainer | `{ link, baseRev, libraryRev? }`: builds the snapshot from the library and publishes it as the next revision. `400 unresolved` lists slots it cannot deliver; `409` when `baseRev` is stale, or `library-changed` when the library moved since the preview. Sends a push to the client. |
+| `GET /api/trainer/assignment` | client | `{ linked: false }`, or `{ linked: true, link, published, applied }` with the latest revision. |
+| `POST /api/trainer/assignment/ack` | client | `{ link, rev, outcome: 'applied' \| 'discarded', routineIds }`. |
+| `GET /api/trainer/progress?link=` | trainer | The read-only progress view ([below](#progress)). |
+
+**Who can call these routes:**
+- Trainer routes need a session and trainer tools on (`403 trainer-off`). Every route names a link
+  by id; one that is not an active link of the caller's, in the role the route needs, is a
+  `404 not-found`, the same answer whether it exists or not, audited as `.denied`.
+- No route takes a user id. An account nobody linked (the operator's) cannot be named at all.
+- Ending a link needs only a session, so a trainer who switched tools off can still end one.
+
+### Assignments
+
+- **Draft and publish.** A trainer picks a programme (the draft, with a note) and publishes it.
+  Every trainer write takes `baseRev` (and `baseWid`), with `PUT /api/data`'s semantics: a stale
+  one is a `409` carrying the current assignment. The server builds the snapshot from the
+  trainer's own library and never takes one sent to it. The last ten published revisions are
+  kept. Library edits change nothing for a client until the trainer publishes again.
+- **The push** says "Plan update from your trainer" and "Open openGym to load it." (or "to
+  review it."), with `url: '#/trainer'`. No names, exercises or notes.
+- **The acknowledgement** records the revision the client applied or discarded, and the routine
+  ids it now holds for the link. It moves no revision of the trainer's, so it never makes the
+  trainer's next write a conflict. For `applied`, the ids must be that revision's; for
+  `discarded`, ones the link delivered. Either way what the trainer may read never widens.
+
+### Delivery in the app
+
+`TrainerInbox`, always mounted, starts once the module is on, someone is signed in and the store's
+first pull is done. It asks `GET /api/trainer/assignment` on start, on focus, when the page
+becomes visible, every 60 seconds, and when the trainer page asks (after Accept or a mode
+switch). A published revision newer than the one applied or discarded is:
+- **trainer-managed:** applied at once, with a toast that offers Undo;
+- **co-managed:** offered on a card with the trainer's note and the diff (routines and exercises
+  added, removed or changed, exercise revisions), with Apply, Discard and Later.
+
+Nothing is applied or offered while a workout is running; it waits for the workout to end.
+
+**Applying** (`delivery.js`) is the client's app changing its own profile through the store's
+`update()`, then its own sync (`PUT /api/data`, with its revision):
+1. An undo copy of routines, week and reschedules, in memory. It is the module's own, not the
+   Coach's `pushSnapshot`/`revertLast`: those keep their stack in the Coach's namespace, where the
+   Coach's "Undo the last Coach changes" would undo a trainer's plan and `revertLast` writes a
+   Coach message.
+2. `applySnapshot` with the routines recorded for the previous revision.
+3. Each demo file (and poster) the snapshot names and the client's media folder lacks (upstream's
+   `POST /api/media/missing`) is downloaded from the trainer's demo store and uploaded through
+   upstream's own `PUT /api/media/<hash>`. From then on it is the client's own file.
+4. The acknowledgement. One that fails is kept on the device and sent first at the next check,
+   so nothing is applied twice.
+
+**Undo** puts routines, week and reschedules back, and acknowledges the revision as discarded, so
+the trainer sees it. Delivered exercises stay, as after a Coach revert.
+
+**Discard** only acknowledges. Nothing in the profile changes.
+
+**Never touched:** personal routines, workouts, weigh-ins, settings, other custom exercises, the
+Coach's data. **The week and any schedule are not changed in this MVP**: a programme's week is
+not applied, and the client puts the delivered routines on days as they like. The one exception is
+upstream's `deleteRoutine`, which takes a routine that a new revision dropped off the week.
+
+**After the link ends**, the delivered routines stay as ordinary routines, with their history and
+the demo copies. A new link to the same trainer replaces them in place.
+
+### Progress
+
+`GET /api/trainer/progress?link=` reads the client's state with upstream's `readStateStrict`
+(read-only) and returns:
+- finished workouts on a routine the link delivered (the acknowledged routines and every retained
+  published snapshot's), finished since the link began, newest first, at most 100;
+- per workout: date, start, duration, the routines' names (the trainer's own), and per exercise
+  the sets with weight, reps, time, effort (RIR or RPE), done and warm-up, plus the client's own
+  notes on the session and on each exercise, where upstream keeps them;
+- the profile's unit, without which no weight can be read;
+- body weight (each workout's `bw`, and the weigh-ins since the link began) only when the client
+  shares it.
+
+Never: media refs, photos or videos, any other setting, credentials, workouts of other routines,
+personal routines, the names of the client's own custom exercises. A session that combined a
+delivered routine with one of the client's own shows only the delivered routine's entries, and not
+its session note. Each read is audited with ids and counts.
+
+### What is stored
+
+| Path | Contents |
+|---|---|
+| `DATA_DIR/trainer/links.json` | `{ v: 1, invites: [{ id, trainer, hash, createdAt, expiresAt, usedAt?, usedBy?, link?, revokedAt? }], links: [{ id, trainer, client, mode, scopes, shareBodyweight, createdAt, revokedAt?, revokedBy? }] }`. Closed invites are dropped a month after they closed. |
+| `DATA_DIR/trainer/assignments/<linkId>.json` | `{ v: 1, rev, wid, draft: { programmeId, note } \| null, published: [{ rev, at, programmeId, programmeRev, snapshot, note }], applied: { rev, at, outcome, routineIds } \| null }`. |
+
+A `links.json` or assignment file that cannot be parsed is never replaced: writes answer `503`,
+and the demo sweep keeps every file of that trainer.
+
+### Clean-up of deleted profiles
+
+Beside the hourly demo sweep (and five minutes after boot), `cleanup.js` removes:
+- invites of a trainer who is gone;
+- links naming a trainer or client who is gone, and their assignment files;
+- assignment files of an ended link, or one `links.json` does not know;
+- a gone trainer's library, demo files and switch.
+
+It never acts when the user list is empty, and nothing that depends on `links.json` happens when
+that file is missing or unreadable. A client keeps what it applied, demo copies included.
+
+### Audit (FIT-004)
+
+`trainer.invite.create`, `.revoke`; `trainer.link.accept`, `.update`, `.revoke`;
+`trainer.assignment.draft`, `.publish`, `.ack`; `trainer.progress.read`; and
+`trainer.invite.denied`, `trainer.link.denied`, `trainer.assignment.denied`,
+`trainer.progress.denied`. Each records user ids, link and invite ids, revisions, modes and counts.
+Never a code, a name, a note or any content.
 
 ## Data contract
 
@@ -485,3 +658,9 @@ the Actions tab.
   - The trainer screens are English only (`strings.js`).
   - The programme editor does not edit the week, progression rules or slot order. A programme
     keeps whatever week it has, and new ones have none.
+  - FIT-004: the week is not applied (above). Upstream's service worker ignores a push's `url`,
+    so tapping the notification opens the app's start page, not `#/trainer`. Undo lives in the
+    toast (in memory, on the device that applied). Two devices of one client that look at the
+    same moment may both apply the same revision; stable ids make that the same result, with two
+    undo copies. Demo copies happen while the client's app is open; a failed copy is retried at
+    the next check. Progress counts workouts since the link began only.
