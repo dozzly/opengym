@@ -152,7 +152,9 @@ that follow from it.
 ### release (daily at 05:17 UTC, and by hand)
 
 1. Fast-forwards `main` to upstream `main`. A diverged `main` is reported and left alone.
-2. Reads `dozzly/UPSTREAM` and looks for the newest upstream `vX.Y.Z` tag. If it is newer, runs
+2. Reads `dozzly/UPSTREAM`: the upstream base, either a release tag or an upstream `main` commit
+   when the branch was brought up to upstream `main` between releases. It then looks for the newest
+   upstream `vX.Y.Z` tag. If the base does not contain that release yet, it runs
    `git rebase --onto <new> <old> dozzly/trainer` and writes the new tag into `dozzly/UPSTREAM`
    (as a fixup, so the history stays release + seam + module).
 3. Runs `dozzly/test.sh`. That covers upstream's own CI commands from `.github/workflows/test.yml`
@@ -174,6 +176,13 @@ that follow from it.
    repository's own token, so this fork holds no credential for the cluster repository. Until
    that workflow exists, the digests are pinned from the summary by hand. The operator merges
    either way.
+
+**Builds follow releases.** A build is named after the newest release its base contains. It is
+refused when the base differs from that release in anything that goes into the images (`api/`
+except `openapi.yaml`, `frontend/`, `web/`). Bringing the branch up to upstream `main` therefore
+never ships unreleased upstream code. Do it by hand with
+`git rebase --onto upstream/main <base> dozzly/trainer`, then write the new base commit into
+`dozzly/UPSTREAM`.
 
 **What triggers a build:**
 - On a schedule, a new upstream release.
