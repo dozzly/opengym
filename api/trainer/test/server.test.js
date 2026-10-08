@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { startServer } from './helpers.mjs';
+import { startServer, cookieFor } from './helpers.mjs';
 import { MODULE_VERSION } from '../routes.js';
 import { parseExport } from '../library.js';
 import { ROUTES } from './inproc.mjs';
@@ -298,4 +298,98 @@ test('PUT /api/data keeps the module\'s fields on routines and custom exercises,
   assert.equal(r.status, 200);
   const last = (await h.call('GET', '/api/data', { uid: UID })).body.state;
   assert.equal('assigned' in last.routines.find(x => x.id === 'tr_coach'), false);
+});
+
+/* ---------------------------------------------------------------- FIT-004 on the real server */
+
+test('FIT-004 on the real server: consent, publish, progress from what PUT /api/data stored, the client\'s demo copy, revoke; the operator untouched', async t => {
+  const DAN = 'u_dan', OP = 'u_op';
+  const h = await startServer(t, { env: ON, users: [...PEOPLE, { id: DAN, name: 'Dan Client' }, { id: OP, name: 'The Operator' }] });
+  // The operator: self-managed, with data of their own, never linked.
+  const opState = { unit: 'kg', routines: [{ id: 'r_op', name: 'Operator day', ex: [{ id: '0025', sets: 3, reps: 5 }] }], workouts: [{ id: 'w_op', d: '2026-10-08', start: Date.now(), routineIds: ['r_op'], entries: [{ id: '0025', sets: [{ w: 100, r: 5, done: true }] }] }], bodyweight: [{ d: '2026-10-08', w: 80 }] };
+  assert.equal((await h.call('PUT', '/api/data', { uid: OP, body: { state: opState, baseRev: 0, stamped: true } })).status, 200);
+  const opFile = path.join(h.dataDir, `state-${OP}.json`);
+  const opBefore = fs.readFileSync(opFile);
+
+  // The trainer: a demo, an exercise, a programme.
+  await h.call('POST', '/api/trainer/capability', { uid: ANNA, body: { enabled: true } });
+  const video = mp4({ bytes: 3000 }), poster = jpeg(700);
+  for (const [bytes, mime] of [[video, 'video/mp4'], [poster, 'image/jpeg']]) assert.equal((await h.raw('PUT', `/api/media/trainer?hash=${sha(bytes)}`, { uid: ANNA, bytes, mime })).status, 201);
+  let r = await h.call('POST', '/api/trainer/library/exercises', { uid: ANNA, body: { baseRev: 0, exercise: exerciseBody({ media: videoRef(video, poster) }) } });
+  const ex = r.body.exercise;
+  r = await h.call('POST', '/api/trainer/library/programmes', { uid: ANNA, body: { baseRev: r.body.rev, programme: programmeBody('Block 1', [{ id: ex.id, sets: 3, reps: 8 }]) } });
+  const prog = r.body.programme;
+
+  // 1-2. An invite, accepted as trainer-managed.
+  r = await h.call('POST', '/api/trainer/invites', { uid: ANNA });
+  assert.equal(r.status, 201);
+  const code = r.body.code;
+  r = await h.call('POST', '/api/trainer/links/accept', { uid: CAT, body: { code, mode: 'trainer-managed' } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const link = r.body.link;
+  assert.equal(link.trainer.name, 'Anna Trainer');
+
+  // 3. Published.
+  r = await h.call('PUT', '/api/trainer/assignments/draft', { uid: ANNA, body: { link: link.id, programmeId: prog.id, note: '', baseRev: 0 } });
+  r = await h.call('POST', '/api/trainer/assignments/publish', { uid: ANNA, body: { link: link.id, baseRev: r.body.rev } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  // A stale publish: 409.
+  assert.equal((await h.call('POST', '/api/trainer/assignments/publish', { uid: ANNA, body: { link: link.id, baseRev: 1 } })).status, 409);
+
+  // 4. The client's app reads it, copies the demo into its own media through upstream's upload,
+  // and syncs the routines it applied through PUT /api/data (the app's own path is exercised in
+  // frontend/src/trainer/acceptance.test.jsx; here, its requests).
+  const a = (await h.call('GET', '/api/trainer/assignment', { uid: CAT })).body;
+  const snap = a.published.snapshot;
+  const got = await h.raw('GET', `/api/media/trainer?hash=${sha(video)}&trainer=${ANNA}`, { uid: CAT });
+  assert.equal(got.status, 200);
+  assert.equal((await h.raw('PUT', `/api/media/${sha(video)}`, { uid: CAT, bytes: got.bytes, mime: 'video/mp4' })).status, 201);
+  const R1 = snap.routines[0].id;
+  const catState = { unit: 'kg', routines: [{ id: 'r_mine', name: 'Mine', ex: [] }, { ...snap.routines[0], ex: [{ id: ex.id, sets: 3, reps: 8 }] }], customEx: snap.customEx, workouts: [], bodyweight: [{ d: '2026-10-08', w: 61 }] };
+  r = await h.call('PUT', '/api/data', { uid: CAT, body: { state: catState, baseRev: 0, stamped: true } });
+  assert.equal(r.status, 200);
+  assert.equal((await h.call('POST', '/api/trainer/assignment/ack', { uid: CAT, body: { link: link.id, rev: 1, outcome: 'applied', routineIds: [R1] } })).status, 200);
+
+  // 5-6. A finished workout on the assigned routine, synced; the trainer reads its sets.
+  const now = Date.now();
+  const workout = { id: 'w_1', d: new Date(now).toISOString().slice(0, 10), start: now, end: now + 1800000, routineIds: [R1], routineId: R1, name: 'Day 1', note: 'Easy', media: [{ kind: 'image', hash: 'f'.repeat(64), mime: 'image/jpeg', size: 1, width: 1, height: 1 }], entries: [{ id: ex.id, sets: [{ w: 20, r: 8, done: true, rir: 2 }] }] };
+  const personal = { id: 'w_2', d: workout.d, start: now + 1, routineIds: ['r_mine'], entries: [{ id: '0025', sets: [{ w: 50, r: 5, done: true }] }] };
+  r = await h.call('PUT', '/api/data', { uid: CAT, body: { state: { ...catState, workouts: [workout, personal] }, baseRev: 1, stamped: true } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await h.call('GET', `/api/trainer/progress?link=${link.id}`, { uid: ANNA });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.workouts.map(w => [w.id, w.duration, w.note, w.exercises[0].sets]), [['w_1', 1800, 'Easy', [{ weight: 20, reps: 8, time: null, effort: { rir: 2 }, done: true }]]]);
+  assert.ok(!JSON.stringify(r.body).includes('f'.repeat(64)) && !('bodyweight' in r.body));
+
+  // The operator is never readable and can never be published to: no link names them.
+  for (const q of [OP, 'lk_0000000000000000']) {
+    assert.equal((await h.call('GET', `/api/trainer/progress?link=${q}`, { uid: ANNA })).status, 404);
+    assert.equal((await h.call('POST', '/api/trainer/assignments/publish', { uid: ANNA, body: { link: q, baseRev: 0 } })).status, 404);
+  }
+  // Another client cannot read Cat's progress or demo.
+  assert.equal((await h.call('GET', `/api/trainer/progress?link=${link.id}`, { uid: DAN })).status, 403);
+  assert.equal((await h.raw('GET', `/api/media/trainer?hash=${sha(video)}&trainer=${ANNA}`, { uid: DAN })).status, 404);
+
+  // The code limiter, as server.js answers it: 429 with Retry-After.
+  for (let i = 0; i < 10; i++) await h.call('POST', '/api/trainer/links/accept', { uid: DAN, body: { code: 'PT-AAAAAAAAAAAA', mode: 'co-managed' } });
+  const locked = await fetch(h.api + '/api/trainer/links/accept', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieFor(DAN) }, body: JSON.stringify({ code: 'PT-AAAAAAAAAAAA', mode: 'co-managed' }) });
+  assert.equal(locked.status, 429);
+  assert.ok(Number(locked.headers.get('retry-after')) > 0);
+
+  // 7. Revoked by the client: progress and the demo end at once; the plan stays in the profile.
+  assert.equal((await h.call('POST', '/api/trainer/links/revoke', { uid: CAT, body: { id: link.id } })).status, 200);
+  assert.equal((await h.call('GET', `/api/trainer/progress?link=${link.id}`, { uid: ANNA })).status, 404);
+  assert.equal((await h.raw('GET', `/api/media/trainer?hash=${sha(video)}&trainer=${ANNA}`, { uid: CAT })).status, 404);
+  const kept = (await h.call('GET', '/api/data', { uid: CAT })).body.state;
+  assert.deepEqual(kept.routines.map(x => x.id), ['r_mine', R1]);
+  assert.equal(kept.customEx[0].id, ex.id);
+  assert.equal((await h.raw('GET', `/api/media/${sha(video)}`, { uid: CAT })).status, 200, 'the copy in the client\'s own media');
+
+  // Nothing of the operator's was touched; the module wrote nothing outside DATA_DIR/trainer/.
+  assert.deepEqual(fs.readFileSync(opFile), opBefore);
+  assert.deepEqual(fs.readdirSync(path.join(h.dataDir, 'uploads')).filter(n => !n.startsWith('.')), [CAT]);
+  const events = h.audit().filter(e => e.ev.startsWith('trainer.')).map(e => e.ev);
+  for (const ev of ['trainer.invite.create', 'trainer.link.accept', 'trainer.assignment.draft', 'trainer.assignment.publish', 'trainer.assignment.ack', 'trainer.progress.read', 'trainer.progress.denied', 'trainer.link.denied', 'trainer.link.revoke']) assert.ok(events.includes(ev), ev);
+  const text = JSON.stringify(h.audit().filter(e => e.ev.startsWith('trainer.')));
+  for (const secret of [code, 'Anna Trainer', 'Cat Client', 'The Operator', 'Easy', 'Block 1']) assert.ok(!text.includes(secret), secret);
 });
