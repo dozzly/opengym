@@ -105,11 +105,15 @@ jobs:
       - name: Plan
         id: plan
         run: |
+          # dozzly/UPSTREAM names the upstream base: a release tag, or an upstream main commit when
+          # the branch was brought up to upstream main between releases.
           old=$(tr -d '[:space:]' < dozzly/UPSTREAM)
           new=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
-          git rev-parse --verify --quiet "refs/tags/$old" >/dev/null || { echo "::error::dozzly/UPSTREAM names $old, which is not an upstream tag"; exit 1; }
+          git rev-parse --verify --quiet "$old^{commit}" >/dev/null || { echo "::error::dozzly/UPSTREAM names $old, which is not an upstream tag or commit"; exit 1; }
+          git merge-base --is-ancestor "$old" upstream/main || { echo "::error::dozzly/UPSTREAM $old is not on upstream main"; exit 1; }
+          # A newer release is one the base does not contain yet.
           rebase=false
-          if [ "$new" != "$old" ] && [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" = "$new" ]; then rebase=true; fi
+          if ! git merge-base --is-ancestor "$new" "$old"; then rebase=true; fi
           build=$rebase
           if [ "$FORCE_BUILD" = true ]; then build=true; fi
           {
@@ -164,7 +168,16 @@ jobs:
         if: steps.plan.outputs.build == 'true'
         run: |
           echo "build tag" > "$RUNNER_TEMP/stage"
-          ver=$(tr -d '[:space:]' < dozzly/UPSTREAM); ver=${ver#v}
+          # A build carries a release's version only if what goes into the images is that release.
+          # A base past the release (upstream main) may differ only outside them: docs, the website,
+          # the OpenAPI text (api/Dockerfile copies an explicit list that leaves it out).
+          base=$(tr -d '[:space:]' < dozzly/UPSTREAM)
+          rel=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$base")
+          if ! git diff --quiet "$rel" "$base" -- api frontend web ':(exclude)api/openapi.yaml'; then
+            { echo "The base $base carries upstream app code that $rel does not:"; git diff --stat "$rel" "$base" -- api frontend web ':(exclude)api/openapi.yaml' | sed 's/^/    /'; echo; echo "Builds follow releases (ADR 029). Wait for the next release, or set dozzly/UPSTREAM back to $rel."; } > "$RUNNER_TEMP/detail"
+            exit 1
+          fi
+          ver=${rel#v}
           n=$(git ls-remote --tags origin "refs/tags/dozzly/build/${ver}-dozzly.*" | sed -n "s#.*refs/tags/dozzly/build/${ver}-dozzly\.\([0-9][0-9]*\)\$#\1#p" | sort -n | tail -n 1)
           tag="${ver}-dozzly.$(( ${n:-0} + 1 ))"
           { echo "VERSION=$ver"; echo "TAG=$tag"; echo "BUILD_N=$(( ${n:-0} + 1 ))"; echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "SHA=$(git rev-parse HEAD)"; } >> "$GITHUB_ENV"
