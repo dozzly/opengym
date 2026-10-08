@@ -1,15 +1,18 @@
 /* The module's routes in-process, against stand-ins for server.js's helpers that behave like the
  * real ones where the module relies on them: json() answers, readSession() is a uid on the
  * request, readBody() parses JSON, audit() records, atomicWrite() writes a temporary file and
- * renames it, sendMediaFile() reads the file. Errors are answered the way server.js's catch-all
- * answers them (a MediaError with its status and code). The clock is injected, so retention can be
- * walked through days without waiting. The real server.js is in server.test.js. */
+ * renames it, sendMediaFile() reads the file, readStateStrict() reads state-<uid>.json the way
+ * server.js does (null when missing, UNREADABLE when it does not parse), sendPush() records.
+ * Errors are answered the way server.js's catch-all answers them (a MediaError with its status
+ * and code). The clock is injected, so retention can be walked through days without waiting. The
+ * real server.js is in server.test.js. */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { MediaError } from '../../media.js';
 import { trainerRoutes } from '../routes.js';
+import { LINK_ROUTES } from '../link-routes.js';
 
 export const quiet = { log() {}, warn() {}, error() {} };
 /** Every route the module registers when it is on (and media uploads are). */
@@ -19,8 +22,12 @@ export const ROUTES = [
   'GET /api/trainer/library', 'GET /api/trainer/library/export',
   'POST /api/trainer/library/exercises', 'PUT /api/trainer/library/exercises', 'DELETE /api/trainer/library/exercises',
   'POST /api/trainer/library/programmes', 'PUT /api/trainer/library/programmes', 'DELETE /api/trainer/library/programmes',
-  'PUT /api/media/trainer', 'GET /api/media/trainer'
+  'PUT /api/media/trainer', 'GET /api/media/trainer',
+  ...LINK_ROUTES
 ];
+/** server.js's own marker for a state file that does not parse (a stand-in: the module only ever
+ *  compares with the one it is handed). */
+export const STATE_UNREADABLE = Symbol('unreadable');
 export const DAY = 86400000;
 
 export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], dataDir } = {}) {
@@ -29,6 +36,8 @@ export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], data
   if (!dataDir) t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const clock = { t: 1_800_000_000_000 };
   const audits = [];
+  const pushes = [];
+  const stateFile = uid => path.join(dir, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
   const helpers = {
     json(res, code, obj, headers) { res.status = code; res.body = obj; res.headers = headers || {}; },
     readSession: req => (req.uid ? { id: req.uid, name: 'Name of ' + req.uid } : null),
@@ -53,8 +62,18 @@ export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], data
       res.bytes = fs.readFileSync(f.path);
       res.hash = hash;
     },
-    users: () => uids.map(id => ({ id }))
+    users: () => uids.map(id => ({ id, name: 'Name of ' + id })),
+    readStateStrict(uid) {
+      let raw;
+      try { raw = fs.readFileSync(stateFile(uid), 'utf8'); }
+      catch (e) { return e.code === 'ENOENT' ? null : STATE_UNREADABLE; }
+      try { return JSON.parse(raw); } catch { return STATE_UNREADABLE; }
+    },
+    UNREADABLE: STATE_UNREADABLE,
+    async sendPush(uid, payload) { pushes.push({ uid, ...payload }); }
   };
+  /** Writes a client's state file, as PUT /api/data would have left it (tests only). */
+  const writeState = (uid, S) => fs.writeFileSync(stateFile(uid), JSON.stringify(S));
   const internals = {};
   const routes = trainerRoutes(helpers, { TRAINER: '1', MEDIA_MIN_FREE_MB: '0', ...env }, { now: () => clock.t, timers: false, log: quiet, internals });
 
@@ -76,5 +95,5 @@ export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], data
     return res;
   }
   const on = uid => call('POST', '/api/trainer/capability', { uid, body: { enabled: true } });
-  return { dir, clock, audits, helpers, routes, internals, uids, call, on };
+  return { dir, clock, audits, pushes, helpers, routes, internals, uids, call, on, writeState, stateFile };
 }

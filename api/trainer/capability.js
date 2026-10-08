@@ -53,5 +53,16 @@ export function createCapabilities({ dir, atomicWrite, env = process.env, now = 
     atomicWrite(file, JSON.stringify({ v: 1, users: doc.users }));
     return { status: 200, enabled: on };
   }
-  return { file, read, mayEnable, enabled, set, restricted: !!allow };
+  /** Drops the switch of every user `keep(uid)` says no to (a deleted profile). Returns how many
+   *  went; writes only when one did, and never over a file that cannot be read. */
+  function prune(keep) {
+    const doc = read();
+    if (doc === UNREADABLE) return 0;
+    const ids = Object.keys(doc.users).filter(id => !keep(id));
+    if (!ids.length) return 0;
+    for (const id of ids) delete doc.users[id];
+    atomicWrite(file, JSON.stringify({ v: 1, users: doc.users }));
+    return ids.length;
+  }
+  return { file, read, mayEnable, enabled, set, prune, restricted: !!allow };
 }
