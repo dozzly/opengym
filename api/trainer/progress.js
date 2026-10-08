@@ -21,6 +21,10 @@
  * A session that combined a delivered routine with one of the client's own shows only the
  * entries of the delivered one (upstream's `rid`); its session note is left out, since it may be
  * about the rest.
+ *
+ * A routine id counts only while the routine of that id in the client's profile, if there is one,
+ * carries this trainer's marker: a published snapshot cannot claim a routine another trainer
+ * delivered (one the client kept after an earlier link), even by naming its id.
  */
 import { assignedRoutineIds } from './assignments.js';
 
@@ -75,11 +79,17 @@ export function setView(s) {
 
 /**
  * The view of `state` (a client's state document, or null) for a link: `assignment` is the link's
- * assignment, `since` when the link began, `shareBodyweight` the client's switch.
+ * assignment, `trainer` its trainer, `since` when the link began, `shareBodyweight` the client's
+ * switch.
  */
-export function progressView(state, { assignment, since = 0, shareBodyweight = false, max = PROGRESS_MAX } = {}) {
+export function progressView(state, { assignment, trainer = null, since = 0, shareBodyweight = false, max = PROGRESS_MAX } = {}) {
   const S = isObj(state) ? state : {};
   const delivered = assignedRoutineIds(assignment);
+  if (trainer) {
+    for (const r of list(S.routines)) {
+      if (isObj(r) && delivered.has(r.id) && !(isObj(r.assigned) && r.assigned.by === trainer)) delivered.delete(r.id);
+    }
+  }
   const rNames = routineNames(assignment);
   const xNames = exerciseNames(assignment);
   const picked = [];

@@ -200,6 +200,17 @@ test('progress: only the link\'s routines, since the link began, newest first; s
   }
 });
 
+test('progress: a routine of that id that another trainer delivered (or the client made) is not this link\'s', () => {
+  const S = clientState();
+  S.routines = [{ id: R1, name: 'From an earlier trainer', assigned: { by: 'u_other', assignmentId: 'lk_old', rev: 3 } }];
+  assert.deepEqual(progressView(S, { assignment, trainer: 'u_anna', since: SINCE }).workouts, []);
+  S.routines = [{ id: R1, name: 'Delivered', assigned: { by: 'u_anna', assignmentId: 'lk_new', rev: 1 } }];
+  assert.deepEqual(progressView(S, { assignment, trainer: 'u_anna', since: SINCE }).workouts.map(w => w.id), ['w_mixed', 'w_1']);
+  // Deleted since (only the history names it): still the link's.
+  S.routines = [];
+  assert.deepEqual(progressView(S, { assignment, trainer: 'u_anna', since: SINCE }).workouts.map(w => w.id), ['w_mixed', 'w_1']);
+});
+
 test('progress: body weight only when the client shares it; nothing for a profile with no state; at most 100', () => {
   const shared = progressView(clientState(), { assignment, since: SINCE, shareBodyweight: true });
   assert.equal(shared.workouts[1].bodyweight, 61);
