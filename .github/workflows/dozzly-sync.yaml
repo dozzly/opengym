@@ -216,7 +216,12 @@ jobs:
           target: default
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}-api:${{ env.TAG }}
+          # <version>-dozzly.<n> names this build; the plain upstream <version> moves to it, so the cluster
+          # pins the upstream version plus digest and version-checker compares it with upstream's
+          # releases (a suffixed tag reads as a pre-release, always behind upstream).
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-api:${{ env.TAG }}
+            ${{ env.IMAGE_PREFIX }}-api:${{ env.VERSION }}
           build-args: |
             VERSION=${{ env.TAG }}
             VCS_REF=${{ env.SHA }}
@@ -237,7 +242,12 @@ jobs:
           file: ./web/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}-web:${{ env.TAG }}
+          # <version>-dozzly.<n> names this build; the plain upstream <version> moves to it, so the cluster
+          # pins the upstream version plus digest and version-checker compares it with upstream's
+          # releases (a suffixed tag reads as a pre-release, always behind upstream).
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-web:${{ env.TAG }}
+            ${{ env.IMAGE_PREFIX }}-web:${{ env.VERSION }}
           build-args: |
             VERSION=${{ env.TAG }}
             VCS_REF=${{ env.SHA }}

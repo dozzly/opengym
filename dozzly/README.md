@@ -162,7 +162,9 @@ that follow from it.
    `/api/config`, contain no AI runtime, and answer `/api/trainer/status` with 404 when off and
    401 when on.
 5. Builds and pushes `ghcr.io/dozzly/opengym-api` (upstream's default target, the one the cluster
-   runs today) and `ghcr.io/dozzly/opengym-web` as `<version>-dozzly.<n>`, for linux/amd64 only
+   runs today) and `ghcr.io/dozzly/opengym-web` as `<version>-dozzly.<n>`, and moves the plain
+   `<version>` tag to the same build (the cluster pins `<version>@<digest>`, so version-checker
+   compares it with upstream's releases), for linux/amd64 only
    (the cluster's only architecture; emulating arm64 on a one-CPU runner is not worth it). The web
    build shows `<version>+dozzly.<n>` in the app.
 6. Pushes `dozzly/trainer` (`--force-with-lease`) and the `dozzly/build/<tag>` tag in one atomic
