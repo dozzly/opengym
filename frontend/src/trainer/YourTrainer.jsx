@@ -5,6 +5,7 @@
 // choice and switch, and End link, which says the plan stays. A plan update itself arrives in the
 // inbox (TrainerInbox.jsx); accepting and switching the mode ask it to look at once.
 import { useCallback, useEffect, useState } from 'react'
+import { useRefreshOnReturn } from './useRefreshOnReturn.js'
 import { Button, Row, Section, Switch, TextField } from './adapter.js'
 import { getLinks, acceptInvite, updateLink, revokeLink } from './client.js'
 import { requestCheck } from './delivery.js'
@@ -32,6 +33,7 @@ export default function YourTrainer() {
     catch { setLink(undefined); setMsg({ alert: T.acceptError.other }) }
   }, [])
   useEffect(() => { load() }, [load])
+  useRefreshOnReturn(load)
 
   const accept = async () => {
     setBusy(true)
