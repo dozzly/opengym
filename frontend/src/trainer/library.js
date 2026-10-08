@@ -71,6 +71,11 @@ export function resolveBuiltin(ref, catalogue = CATALOGUE) {
   return ix.byId.get(ref.id) || null
 }
 
+/** A built-in exercise by the id upstream's own data uses (a logged workout's entry, a routine in
+ *  a profile): upstream's catalogue as this app runs it. Never for the module's stored references,
+ *  which carry their catalogue and go through resolveBuiltin(). */
+export const catalogueEntry = (id, catalogue = CATALOGUE) => (typeof id === 'string' ? indexOf(catalogue).byId.get(id) || null : null)
+
 /** What a slot names: { kind: 'library', ex } (archived ones included), { kind: 'builtin', ex },
  *  or { kind: 'unknown', id, catalog } — shown as such, never dropped from the programme. */
 export function resolveSlot(slot, exercisesById, catalogue = CATALOGUE) {
