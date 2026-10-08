@@ -101,3 +101,46 @@ test('nginx lets large, unbuffered bodies through under /api/media/ only, which 
   const api = nginx.slice(nginx.indexOf('location ^~ ${BASE_PATH}/api/ {'));
   assert.match(api.slice(0, api.indexOf('\n    }\n')), /client_max_body_size 5m;/);
 });
+
+/* ---------- what links, assignments and progress stand on (FIT-004) ---------- */
+
+test('the seam hands over readStateStrict, UNREADABLE and sendPush, which FIT-004 calls', () => {
+  const call = /^ {2}\.\.\.trainerRoutes\(\{ (.*) \}\),$/m.exec(server)[1];
+  for (const k of ['readStateStrict', 'UNREADABLE', 'sendPush']) assert.ok(call.split(/,\s*/).includes(k), k);
+});
+
+test('readStateStrict(uid): the parsed state, null when there is none, UNREADABLE when it does not read; it never writes', () => {
+  assert.match(server, /^const UNREADABLE = Symbol\(/m);
+  const at = server.indexOf('function readStateStrict(uid) {');
+  assert.ok(at > 0, 'function readStateStrict(uid)');
+  const body = server.slice(at, server.indexOf('\n}\n', at));
+  for (const s of ['fs.readFileSync(stateFile(uid)', "catch (e) { return e.code === 'ENOENT' ? null : UNREADABLE; }", 'try { return JSON.parse(raw); } catch { return UNREADABLE; }']) {
+    assert.ok(body.includes(s), s);
+  }
+  assert.doesNotMatch(body, /write|unlink|rename|mkdir/);
+  // The file it reads is the one PUT /api/data writes, so progress sees what the client synced.
+  assert.match(server, /atomicWrite\(stateFile\(user\.id\), text\);/);
+});
+
+test('sendPush(userId, payload, deviceId): the payload as JSON to the user\'s own subscriptions, shaped as the Coach\'s', () => {
+  const at = server.indexOf('async function sendPush(userId, payload, deviceId) {');
+  assert.ok(at > 0, 'async function sendPush(userId, payload, deviceId)');
+  const body = server.slice(at, server.indexOf('\n}\n', at));
+  assert.ok(body.includes('let subs = db.subs.filter(s => s.userId === userId);'));
+  assert.ok(body.includes('if (!subs.length) return;'), 'nothing to send is not an error');
+  assert.ok(body.includes('const body = JSON.stringify(payload);'));
+  // The Coach's notification is { title, body, tag, url }, as the module's is.
+  assert.match(server, /sendPush\(uid, \{\n\s+title: [^\n]+\n\s+body: [^\n]+\n\s+tag: 'coach-proposal', url: '#\/coach'\n\s+\}\);/);
+});
+
+test('users(): db.users, records with an id and a name; an admin\'s delete replaces the list without the profile', () => {
+  assert.match(server, /const user = \{ id: crypto\.randomBytes\(12\)\.toString\('base64url'\), name, /);
+  const at = server.indexOf("'POST /api/admin/user/delete': async (req, res) => {");
+  assert.ok(at > 0);
+  const body = server.slice(at, server.indexOf('\n  },\n', at));
+  assert.ok(body.includes('db.users = db.users.filter(x => x.id !== u.id);'));
+  // Upstream removes the profile's own state and uploads, and nothing under DATA_DIR/trainer/:
+  // that is the module's own clean-up (cleanup.js).
+  assert.ok(body.includes('fs.unlinkSync(stateFile(u.id))') && body.includes('MEDIA.removeUser(u.id)'));
+  assert.doesNotMatch(body, /trainer/);
+});

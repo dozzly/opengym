@@ -120,3 +120,18 @@ test('the sweep: keeps what readState references, removes the rest only after th
   throwing.clock.t += 100 * DAY;
   assert.equal(throwing.s.sweep('u').skipped, true);
 });
+
+test('removeUser(uid): the whole folder of one profile, and nothing else (the clean-up of a deleted trainer)', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trainer-media-rm-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const store = createMediaStore({ dir, limits: { ...mediaLimits({}), minFreeMB: 0 }, log: quiet });
+  for (const uid of ['u_a', 'u_b']) {
+    fs.mkdirSync(path.join(dir, uid), { recursive: true });
+    fs.writeFileSync(path.join(dir, uid, 'a'.repeat(64) + '.jpg'), 'x');
+  }
+  assert.equal(typeof store.removeUser, 'function');
+  store.removeUser('u_a');
+  assert.deepEqual(fs.readdirSync(dir), ['u_b']);
+  assert.throws(() => store.removeUser(''), 'an id that sanitises to nothing names no folder');
+  assert.deepEqual(fs.readdirSync(dir), ['u_b']);
+});
