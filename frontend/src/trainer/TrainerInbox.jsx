@@ -45,12 +45,16 @@ function Inbox({ uid }) {
   const setFailed = k => { failedRef.current = k; setFailedState(k) }
   const [busy, setBusy] = useState(false)
   const checking = useRef(false)
+  const again = useRef(false)                   // asked again while a check was in flight
   const live = useRef(true)
   const owedCopy = useRef(null)                 // { link, rev, snapshot, trainer } whose demo copy failed
 
+  // One check at a time. One asked for meanwhile (a focus, the trainer page after Accept) runs
+  // once more after it: it may be for a revision the check in flight did not see yet.
   const run = useCallback(async () => {
-    if (checking.current) return
+    if (checking.current) { again.current = true; return }
     checking.current = true
+    again.current = false
     try {
       const a = await check(uid)
       if (!live.current) return
@@ -75,8 +79,13 @@ function Inbox({ uid }) {
         const a = await check(uid).catch(() => null)
         if (a?.due && live.current) { setFailed(`${a.link.id}:${a.published.rev}`); setOffer(a) }
       }
-    } finally { checking.current = false }
+    } finally {
+      checking.current = false
+      if (again.current && live.current) { again.current = false; runRef.current() }
+    }
   }, [uid])
+  const runRef = useRef(run)
+  runRef.current = run
 
   useEffect(() => {
     live.current = true
