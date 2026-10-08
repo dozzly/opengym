@@ -1,9 +1,12 @@
-// #/trainer: the switch, then (switched on) the library's exercises and programmes, and the export.
+// #/trainer: "Your trainer" (anyone signed in, FIT-004), the trainer-tools switch, then (switched
+// on) the clients, the library's exercises and programmes, and the export.
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Row, Section, Switch, vocabText, MB } from './adapter.js'
 import { getExport } from './client.js'
 import Page, { Note } from './Page.jsx'
+import YourTrainer from './YourTrainer.jsx'
+import Clients from './Clients.jsx'
 import { TEXT } from './strings.js'
 
 // Demo files are often a few KB (a re-encoded photo, a poster), so below 1 MB the size is in KB:
@@ -43,6 +46,7 @@ export default function TrainerHome({ module, cap, lib, error, setEnabled }) {
     subtitle={TEXT.routineCount(p.routines.length)} accessory="chevron" onClick={() => nav(`programmes/${p.id}`)} />
 
   return <Page title={TEXT.title} backLabel={TEXT.back}>
+    <YourTrainer />
     <Note alert>{error}</Note>
     {cap && <Section footer={cap.allowed || cap.enabled ? `${TEXT.enableFooter} ${TEXT.offKeeps}` : TEXT.notAllowed}>
       <Row icon="clipboard" title={TEXT.enable}>
@@ -51,6 +55,7 @@ export default function TrainerHome({ module, cap, lib, error, setEnabled }) {
     </Section>}
 
     {cap?.enabled && lib && <>
+      <Clients />
       <Section title={TEXT.exercises} footer={usage ? TEXT.usage(sizeText(usage.bytes), usage.quotaBytes ? sizeText(usage.quotaBytes) : null) : null}>
         {exercises.filter(e => !e.archived).map(exerciseRow)}
         <Row icon="plusCircle" title={TEXT.newExercise} onClick={() => nav('exercises/new')} />

@@ -82,6 +82,8 @@ async function type(el, value) {
   })
 }
 const text = () => host.textContent
+// The trainer-tools switch (the page also has the client's body-weight switch, FIT-004).
+const enableSwitch = () => host.querySelector(`[role="switch"][aria-label="${TEXT.enable}"]`)
 
 beforeEach(() => {
   forgetTrainerStatus()
@@ -116,7 +118,7 @@ describe('the trainer page', () => {
     connect(ANNA.id)
     await mount(ANNA, '/trainer')
     expect(host.querySelector('.trainer-root')).toBeTruthy()
-    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.2.0')
+    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.0')
     expect(api.mock.calls.filter(c => c[0] === '/api/trainer/status')).toHaveLength(1)
   })
 
@@ -151,16 +153,16 @@ describe('trainer tools', () => {
   it('off by default: only the switch; switching on shows the library, switching off hides it and keeps it', async () => {
     const s = connect(ANNA.id)
     await mount(ANNA)
-    const sw = host.querySelector('[role="switch"]')
+    const sw = enableSwitch()
     expect(sw.getAttribute('aria-label')).toBe(TEXT.enable)
     expect(sw.getAttribute('aria-checked')).toBe('false')
     expect(button(TEXT.newExercise)).toBeUndefined()
     await click(sw)
-    expect(host.querySelector('[role="switch"]').getAttribute('aria-checked')).toBe('true')
+    expect(enableSwitch().getAttribute('aria-checked')).toBe('true')
     expect(button(TEXT.newExercise)).toBeTruthy()
     expect(button(TEXT.newProgramme)).toBeTruthy()
     await s.call('POST', '/api/trainer/library/exercises', { uid: ANNA.id, body: { baseRev: 0, exercise: exerciseBody() } })
-    await click(host.querySelector('[role="switch"]'))
+    await click(enableSwitch())
     expect(button(TEXT.newExercise)).toBeUndefined()
     expect(s.internals.library.read(ANNA.id).exercises).toHaveLength(1)
   })
@@ -170,7 +172,7 @@ describe('trainer tools', () => {
     const s = srv
     api.mockImplementation(async (p, opts = {}) => (await s.call((opts.method || 'GET').toUpperCase(), p, { uid: ANNA.id })).body)
     await mount(ANNA)
-    expect(host.querySelector('[role="switch"]').disabled).toBe(true)
+    expect(enableSwitch().disabled).toBe(true)
     expect(text()).toContain(TEXT.notAllowed)
   })
 
