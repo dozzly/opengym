@@ -41,7 +41,7 @@ const idOrDash = (id, re) => (typeof id === 'string' && re.test(id) ? id : '-');
 
 export function linkRoutes(ctx) {
   const {
-    json, readSession, readBody, note, now, trainerOf, log,
+    json, readSession, readBody, note, now, trainerOf, log, emailRequired = false,
     caps, library, links, assignments, limiter, demo, users, readStateStrict, stateUnreadable, sendPush
   } = ctx;
 
@@ -49,8 +49,19 @@ export function linkRoutes(ctx) {
     const u = (users() || []).find(x => x?.id === uid);
     return u ? String(u.name || '') : null;
   };
-  const trainerView = l => ({ id: l.id, client: { id: l.client, name: nameOf(l.client) }, mode: l.mode, shareBodyweight: l.shareBodyweight, scopes: [...l.scopes], createdAt: l.createdAt });
-  const clientView = l => ({ id: l.id, trainer: { id: l.trainer, name: nameOf(l.trainer) }, mode: l.mode, shareBodyweight: l.shareBodyweight, scopes: [...l.scopes], createdAt: l.createdAt });
+  // The profile's sign-in e-mail (upstream's, set in Settings → Account while PASSWORD_LOGIN is on).
+  // A trainer and a client see each other's next to the name: names are not unique between
+  // passkey profiles, and the address is the one that matches the person's Authentik account
+  // (and, with upstream's OIDC later, the account itself).
+  const emailOf = uid => {
+    const u = (users() || []).find(x => x?.id === uid);
+    return u && typeof u.email === 'string' && u.email ? u.email : null;
+  };
+  const person = uid => ({ id: uid, name: nameOf(uid), email: emailOf(uid) });
+  const trainerView = l => ({ id: l.id, client: person(l.client), mode: l.mode, shareBodyweight: l.shareBodyweight, scopes: [...l.scopes], createdAt: l.createdAt });
+  const clientView = l => ({ id: l.id, trainer: person(l.trainer), mode: l.mode, shareBodyweight: l.shareBodyweight, scopes: [...l.scopes], createdAt: l.createdAt });
+  // A link needs a sign-in e-mail on both sides, while the instance has them.
+  const needsEmail = uid => emailRequired && !emailOf(uid);
   const unreadable = (res, what = 'the trainer links') => json(res, 503, { error: `${what} cannot be read`, code: 'unreadable' });
   const notFound = res => json(res, 404, { error: 'no such link', code: 'not-found' });
 
@@ -89,6 +100,7 @@ export function linkRoutes(ctx) {
       const user = trainerOf(req, res, 'trainer.invite.denied');
       if (!user) return;
       await readBody(req);
+      if (needsEmail(user.id)) return refusedLink(req, res, user.id, 'trainer.invite.denied', new LinkError(409, 'email-required', { who: 'trainer' }));
       let out;
       try {
         out = links.change((doc, t) => {
@@ -147,12 +159,14 @@ export function linkRoutes(ctx) {
       }
       if (!MODES.includes(body.mode)) return json(res, 400, { error: 'mode must be co-managed or trainer-managed', code: 'invalid', field: 'mode' });
       if (body.shareBodyweight != null && typeof body.shareBodyweight !== 'boolean') return json(res, 400, { error: 'shareBodyweight must be true or false', code: 'invalid', field: 'shareBodyweight' });
+      // Not a wrong code: refused before the code is looked at, and not counted by the limiter.
+      if (needsEmail(user.id)) return refusedLink(req, res, user.id, 'trainer.link.denied', new LinkError(409, 'email-required', { who: 'client' }));
       let out;
       try {
         out = links.change((doc, t) => {
           const inv = inviteForCode(doc, body.code, user.id, t);
           // A trainer who is gone, or who switched trainer tools off since inviting, cannot be linked.
-          if (nameOf(inv.trainer) === null || !caps.enabled(inv.trainer)) throw new LinkError(410, 'trainer-unavailable');
+          if (nameOf(inv.trainer) === null || !caps.enabled(inv.trainer) || needsEmail(inv.trainer)) throw new LinkError(410, 'trainer-unavailable');
           if (activeLinkOf(doc, user.id)) throw new LinkError(409, 'has-trainer');
           const link = {
             id: newLinkId(), trainer: inv.trainer, client: user.id, mode: body.mode, scopes: [...SCOPES],

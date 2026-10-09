@@ -30,7 +30,7 @@ export const ROUTES = [
 export const STATE_UNREADABLE = Symbol('unreadable');
 export const DAY = 86400000;
 
-export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], dataDir } = {}) {
+export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], emails = {}, dataDir } = {}) {
   uids = [...uids];
   const dir = dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'trainer-inproc-'));
   if (!dataDir) t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -62,7 +62,8 @@ export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], data
       res.bytes = fs.readFileSync(f.path);
       res.hash = hash;
     },
-    users: () => uids.map(id => ({ id, name: 'Name of ' + id })),
+    // `emails`: the profiles' sign-in e-mails (upstream's `email` on a db.json user), by id.
+    users: () => uids.map(id => ({ id, name: 'Name of ' + id, ...(emails[id] ? { email: emails[id] } : {}) })),
     readStateStrict(uid) {
       let raw;
       try { raw = fs.readFileSync(stateFile(uid), 'utf8'); }

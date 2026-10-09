@@ -129,6 +129,7 @@ export default function ClientDetail({ lib }) {
   const unresolved = a.preview?.unresolved || []
   return <Page title={name} back="/trainer" backLabel={TEXT.backToTrainer} className="trainer-client">
     <Section>
+      <Row icon="envelope" title={T.email} value={a.link.client.email || T.noEmail} />
       <Row icon="personCircle" title={T.modeTitle} value={T.modes[a.link.mode].label} />
       <Row icon="clipboard" title={T.status} value={T.statusText(current, a.applied)} />
       <Row icon="scale" title={T.bodyweight} value={a.link.shareBodyweight ? T.shared : T.notShared} />

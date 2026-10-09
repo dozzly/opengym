@@ -36,8 +36,8 @@ function Where() { where = useLocation().pathname; return null }
 /** The module's routes in-process, answering this device as whoever is signed in on it. The two
  *  upstream media routes delivery uses (POST /api/media/missing, PUT /api/media/<hash>) are a
  *  stand-in client folder here; acceptance.test.jsx runs the real ones. */
-function connect(env) {
-  srv = harness({ after: fn => cleanups.push(fn) }, { env })
+function connect(env, emails) {
+  srv = harness({ after: fn => cleanups.push(fn) }, { env, ...(emails ? { emails } : {}) })
   ownFiles = new Map()
   const who = () => useStore.getState().user?.id
   const failure = r => Object.assign(new Error(r.body?.error || 'HTTP ' + r.status), { status: r.status, data: r.body || {} })
@@ -285,6 +285,38 @@ describe('the client\'s "Your trainer"', () => {
     expect(text()).toContain(T.ended)
     expect(srv.internals.links.read().links[0]).toMatchObject({ revokedBy: CAT.id })
     expect(host.querySelector('#trainer-invite-code')).toBeTruthy()
+  })
+})
+
+describe('sign-in e-mails (PASSWORD_LOGIN on)', () => {
+  const PW = { PASSWORD_LOGIN: '1' }
+  it('without one, the trainer cannot invite and the client cannot accept, and each is told how to add it', async () => {
+    connect(PW, { [ANNA.id]: 'anna@example.test' })
+    await annasLibrary()
+    const code = (await srv.call('POST', '/api/trainer/invites', { uid: ANNA.id })).body.code
+    await mount(CAT)
+    await type(host.querySelector('#trainer-invite-code'), code)
+    await click(button(T.accept))
+    expect(host.querySelector('[role="alert"]').textContent).toBe(T.acceptError['email-required'])
+    expect(srv.internals.links.read().links).toHaveLength(0)
+    act(() => root.unmount()); host.remove()
+    connect(PW)
+    await annasLibrary()
+    await mount(ANNA)
+    await click(button(T.inviteClient))
+    expect(text()).toContain(T.inviteEmailRequired)
+    expect(host.querySelector('[data-testid="invite-code"]')).toBeNull()
+  })
+  it('with them, the trainer sees the client\'s e-mail beside her name, and the client the trainer\'s', async () => {
+    connect(PW, { [ANNA.id]: 'anna@example.test', [CAT.id]: 'cat@example.test' })
+    await annasLibrary()
+    await linkCat('co-managed')
+    await mount(ANNA)
+    expect(text()).toContain('cat@example.test')
+    act(() => root.unmount()); host.remove()
+    await mount(CAT)
+    expect(text()).toContain(ANNA.name)
+    expect(text()).toContain('anna@example.test')
   })
 })
 

@@ -92,7 +92,7 @@ export default function YourTrainer() {
 
   return <div className="trainer-your-trainer">
     <Section title={T.yourTrainer} footer={T.linkedFooter}>
-      <Row icon="personCircle" title={T.trainer} value={link.trainer.name} />
+      <Row icon="personCircle" title={T.trainer} value={link.trainer.name} subtitle={link.trainer.email || T.noEmail} />
     </Section>
     <Section title={T.modeTitle}>
       <ModeRows value={link.mode} disabled={busy} onChange={m => { if (m !== link.mode) change({ mode: m }) }} />

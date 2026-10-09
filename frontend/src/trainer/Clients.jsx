@@ -36,7 +36,10 @@ export default function Clients() {
       const r = await createInvite()
       setFresh(r)
       setInvites(list => [...list, r.invite])
-    } catch (e) { setMsg({ alert: (e?.data?.code || e?.code) === 'too-many-invites' ? T.tooManyInvites : TEXT.failed }) }
+    } catch (e) {
+      const code = e?.data?.code || e?.code
+      setMsg({ alert: code === 'too-many-invites' ? T.tooManyInvites : code === 'email-required' ? T.inviteEmailRequired : TEXT.failed })
+    }
     finally { setBusy(false) }
   }
   const revoke = async id => {
@@ -57,7 +60,7 @@ export default function Clients() {
   return <>
     <Section title={T.clients}>
       {links.map(l => <Row key={l.id} icon="personCircle" title={l.client.name || l.client.id}
-        subtitle={`${T.modes[l.mode].label} · ${T.statusText(l.published, l.applied)}`}
+        subtitle={`${l.client.email || T.noEmail} · ${T.modes[l.mode].label} · ${T.statusText(l.published, l.applied)}`}
         accessory="chevron" onClick={() => nav(`clients/${l.id}`)} />)}
       {!links.length && <Row icon="person" title={T.noClients} />}
       <Row icon="plusCircle" title={T.inviteClient} onClick={busy ? undefined : invite} />

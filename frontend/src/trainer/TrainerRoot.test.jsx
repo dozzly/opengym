@@ -127,7 +127,7 @@ describe('the trainer page', () => {
     connect(ANNA.id)
     await mount(ANNA, '/trainer')
     expect(host.querySelector('.trainer-root')).toBeTruthy()
-    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.0')
+    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.1')
     expect(api.mock.calls.filter(c => c[0] === '/api/trainer/status')).toHaveLength(1)
   })
 

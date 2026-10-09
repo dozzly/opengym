@@ -434,6 +434,17 @@ that file is missing or unreadable. A client keeps what it applied, demo copies 
 `trainer.progress.denied`. Each records user ids, link and invite ids, revisions, modes and counts.
 Never a code, a name, a note or any content.
 
+**Sign-in e-mails (0.3.1).** While the instance has `PASSWORD_LOGIN` on, a link needs a
+sign-in e-mail (upstream's, set in Settings → Account after a password) on both sides:
+- An invite from a trainer without one is refused (409 `email-required`, `who: trainer`).
+- So is accepting a code without one (`who: client`). That refusal is not counted as a wrong
+  code.
+- The trainer's Clients list and client page show the client's e-mail beside the name, and
+  "Your trainer" shows the trainer's.
+- Names are not unique between passkey profiles; the address matches the person's Authentik
+  account and is the key for upstream's OIDC sign-in later.
+- Without `PASSWORD_LOGIN` there are no e-mails, so nothing is required and none is shown.
+
 ## Data contract
 
 An applied assignment leaves a marker on the client's own routines: `assigned: { by,

@@ -84,6 +84,41 @@ test('invites: a one-time code shown once, listed without it, at most ten open, 
   }
 });
 
+test('sign-in e-mails: shown beside the name on both sides; required on both sides while PASSWORD_LOGIN is on', async t => {
+  const on = { TRAINER: '1', PASSWORD_LOGIN: '1' };
+  // Without e-mails: the trainer cannot invite, and a client cannot accept (not counted as a wrong code).
+  const bare = harness(t, { env: on, uids: [ANNA, CAT] });
+  await bare.on(ANNA);
+  let r = await bare.call('POST', '/api/trainer/invites', { uid: ANNA });
+  assert.deepEqual([r.status, r.body.code, r.body.who], [409, 'email-required', 'trainer']);
+  assert.ok(bare.audits.some(a => a.ev === 'trainer.invite.denied' && a.msg === 'email-required'));
+  const withTrainer = harness(t, { env: on, uids: [ANNA, CAT], emails: { [ANNA]: 'anna@example.test' } });
+  await withTrainer.on(ANNA);
+  const code = (await withTrainer.call('POST', '/api/trainer/invites', { uid: ANNA })).body.code;
+  for (let i = 0; i < 12; i++) {
+    r = await withTrainer.call('POST', '/api/trainer/links/accept', { uid: CAT, body: { code, mode: 'co-managed' } });
+    assert.deepEqual([r.status, r.body.code, r.body.who], [409, 'email-required', 'client']);
+  }
+  // Both with e-mails: the same code still works (no lock-out), and each side sees the other's address.
+  const both = harness(t, { env: on, uids: [ANNA, CAT], emails: { [ANNA]: 'anna@example.test', [CAT]: 'cat@example.test' } });
+  await both.on(ANNA);
+  const code2 = (await both.call('POST', '/api/trainer/invites', { uid: ANNA })).body.code;
+  r = await both.call('POST', '/api/trainer/links/accept', { uid: CAT, body: { code: code2, mode: 'co-managed' } });
+  assert.equal(r.status, 201);
+  assert.deepEqual(r.body.link.trainer, { id: ANNA, name: 'Name of ' + ANNA, email: 'anna@example.test' });
+  const asTrainer = (await both.call('GET', '/api/trainer/links', { uid: ANNA })).body.asTrainer;
+  assert.deepEqual(asTrainer[0].client, { id: CAT, name: 'Name of ' + CAT, email: 'cat@example.test' });
+  const asClient = (await both.call('GET', '/api/trainer/links', { uid: CAT })).body.asClient;
+  assert.equal(asClient.trainer.email, 'anna@example.test');
+  // Without password sign-in there are no e-mails to require: links work, and show none.
+  const off = harness(t, { env: { TRAINER: '1' }, uids: [ANNA, CAT] });
+  await off.on(ANNA);
+  const code3 = (await off.call('POST', '/api/trainer/invites', { uid: ANNA })).body.code;
+  r = await off.call('POST', '/api/trainer/links/accept', { uid: CAT, body: { code: code3, mode: 'co-managed' } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.link.trainer.email, null);
+});
+
 test('accept: consumes the invite; used, revoked, expired, unknown, self and a second trainer are refused', async t => {
   const { h } = await setup(t);
   const code = await invite(h);
@@ -98,7 +133,7 @@ test('accept: consumes the invite; used, revoked, expired, unknown, self and a s
   r = await h.call('POST', '/api/trainer/links/accept', { uid: CAT, body: { code: code.toLowerCase().replace('-', ' '), mode: 'co-managed' } });
   assert.equal(r.status, 201);
   assert.deepEqual(r.body.link, {
-    id: r.body.link.id, trainer: { id: ANNA, name: 'Name of u_anna' }, mode: 'co-managed', shareBodyweight: false,
+    id: r.body.link.id, trainer: { id: ANNA, name: 'Name of u_anna', email: null }, mode: 'co-managed', shareBodyweight: false,
     scopes: ['read_progress', 'write_assigned_plan'], createdAt: h.clock.t
   });
   assert.match(r.body.link.id, /^lk_[0-9a-f]{16}$/);

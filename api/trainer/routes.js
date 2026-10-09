@@ -57,7 +57,7 @@ import { snapshotHashes } from './snapshot.js';
 import { sweepOrphans } from './cleanup.js';
 import { linkRoutes } from './link-routes.js';
 
-export const MODULE_VERSION = '0.3.0';
+export const MODULE_VERSION = '0.3.1';
 
 const ON = /^(1|true|yes|on)$/i;
 export const trainerEnabled = (env = process.env) => ON.test(env.TRAINER || '');
@@ -384,6 +384,8 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
 
   Object.assign(routes, linkRoutes({
     json, readSession, readBody, note, now, trainerOf, log,
+    // While the instance takes passwords (and so sign-in e-mails), a link needs one on both sides.
+    emailRequired: /^(1|true|yes|on)$/i.test(env.PASSWORD_LOGIN || ''),
     caps, library, links, assignments, limiter, demo, users, readStateStrict, stateUnreadable: helpers.UNREADABLE, sendPush
   }));
 
