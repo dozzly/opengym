@@ -37,6 +37,14 @@
 //   - useProfileReady: the store's `ready`; nothing is applied before its first pull is done.
 //   - api to upstream's POST /api/media/missing and apiUpload to PUT /api/media/<hash>: a demo is
 //     copied into the client's own media folder through upstream's own upload path.
+//
+// FIT-008 adds what starting a session the Coach proposed needs (contract.test.js pins each):
+//   - buildSessionEntries: the entries a routine's slots open a workout with, the prescription
+//     applied, as upstream builds them when a stored routine starts (lib/session-start.js).
+//   - loadSheets: upstream's weigh-in sheet (bwSheet) and its start of a stored routine
+//     (startFlow), loaded when a session starts rather than with the module.
+//   - navToWorkout, stopRest, uid, todayISO, getLang, mergePlan: the rest of upstream's own start
+//     (sheets.jsx beginWorkout), and its "add these routines to mine".
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 
@@ -85,3 +93,12 @@ export const useWorkoutRunning = () => useStore(s => !!s.S?.active)
 /** Whether the store has finished booting (its first pull from the server is done): before that,
  *  the profile in hand may be older than the server's, and nothing is applied to it. */
 export const useProfileReady = () => useStore(s => !!s.ready)
+
+/* ---------- FIT-008: a quick session from the Coach ---------- */
+export { buildSessionEntries } from '../lib/session-start.js'
+export { navToWorkout } from '../lib/nav.js'
+export { uid, todayISO } from '../lib/format.js'
+export { getLang } from '../lib/i18n-core.js'
+export { mergePlan } from '../lib/plan-share.js'
+export const loadSheets = () => import('../sheets.jsx')
+export const stopRest = () => useUI.getState().stopRest()

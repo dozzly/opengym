@@ -51,9 +51,12 @@ Everything else in this repository is upstream's, unchanged.
 
 ## The seam
 
-These are the only edits to upstream-owned files, all in one commit
-(`dozzly: seam - hook points for the trainer module`). The budget is about 15 changed lines
-(ADR 029, decision 3). This seam is 10: 8 added and 2 changed (`git diff --stat`: 6 files, +10 −2).
+These are the only edits to upstream-owned files. They are in the seam commit
+(`dozzly: seam - hook points for the trainer module`), except for the two `Workout.jsx` lines
+added for FIT-008 in `dozzly: seam - quick session on the start screen (FIT-008)`. That commit
+sits on top of the module rather than being folded into the seam commit, because folding means
+rewriting the branch outside a release rebase. The budget is about 15 changed lines (ADR 029,
+decision 3). This seam is 12: 10 added and 2 changed (`git diff --stat`: 7 files, +12 −2).
 
 | File | Lines | What and where |
 |---|---|---|
@@ -61,6 +64,7 @@ These are the only edits to upstream-owned files, all in one commit
 | `api/Dockerfile` | +1 | `COPY trainer ./trainer` after `COPY coach ./coach`. |
 | `frontend/src/App.jsx` | +3 | The import after the `react-router-dom` import. `<Route path="/trainer/*" …/>` directly after `<Routes>`. `<TrainerInbox />` between `<Toast />` and `<TimerFlash />`. |
 | `frontend/src/views/Home.jsx` | +2 | `import { TrainerHomeCard } from '../trainer/index.js'` after the first import (`useState` from `react`). `<TrainerHomeCard />` on the line before the gym check-in card's comment (`{/* Jump to the gym check-in cards`), so the card sits just above "At the gym". It is the way in to `#/trainer` from the installed app, which has no address bar; it renders nothing while the module is off. |
+| `frontend/src/views/Workout.jsx` | +2 | `import { QuickSessionStart } from '../trainer/index.js'` after the first import. `<QuickSessionStart />` on the line after the start screen's "Freestyle workout (pick as you go)" button, so "Quick session from the Coach" sits right under it (FIT-008). It renders nothing while the module is off or the Coach is not available for it. |
 | `frontend/src/views/Settings.jsx` | ±1 | The "Source code" link points at this repository ([licence](#licence-and-source-offer)). |
 | `frontend/src/views/Settings.reset.test.jsx` | ±1 | Upstream's test that pins that link's address (since v1.3.9) expects this repository, so upstream's own suite stays green. |
 
@@ -485,6 +489,52 @@ run is a changed slot in the diff. Upstream plans distance for cardio (v1.3.12) 
 The exercise picker now lists the closest matches first: the whole name, then its start, then a
 word's start, then anywhere. Upstream's search matches anywhere, so "run" used to list thirty
 crunches and never the run.
+
+## A quick session from the AI Coach (0.6.0, FIT-008)
+
+"Quick session from the Coach" sits under "Freestyle workout" on the start screen
+(`QuickSession.jsx`, the `Workout.jsx` hook). The person picks the time (20 to 90 minutes), a focus
+(full body, upper, lower, push, pull, core, run, climbing, mobility), today's equipment (or their
+usual), how they feel (fresh, OK, tired, sore) and an optional note. The Coach answers with one
+session: name, summary, and each exercise with its sets and reps (or time) and a line written to
+the person. They can:
+- **Start this session**: a one-off. Upstream's own start (the weigh-in, if it is on), with the
+  entries built from a routine that is never stored (`buildSessionEntries`). The workout is logged
+  under the session's name; routines, week and progression settings are untouched.
+- **Keep it as a routine and start**: upstream's `mergePlan` adds it to their routines (fresh id,
+  not scheduled), and that routine starts, so its history attaches to it.
+- **Ask again** or **Discard**.
+
+Each exercise's line becomes its instruction (`note`), shown on the workout screen.
+
+The server half (`api/trainer/quick-session.js`) is upstream's Coach put together for a task it
+does not have:
+- **Provider.** The instance's configured Coach, HTTPS providers only (`spawns: false`; dozzly
+  runs `compatible`, LiteLLM's `dozzly/gym-coach-v1`). A provider that runs a CLI in the
+  container is reported as unavailable (`reason: provider`).
+- **Gates.** The master switch and a connected provider, the profile's consent to the Coach
+  (`S.coach.consent.agreedAt`, checked again before the call and after the answer: withdrawn
+  meanwhile, nothing is kept), no Coach job of its own in flight, one quick session at a time,
+  the per-profile daily limit (the Coach's `perProfileDaily`, or 10 when that is unlimited,
+  counted in `DATA_DIR/trainer/quick-usage.json`) and the Coach's instance limit and count.
+- **Payload.** Upstream's `create` payload cut down: `meta` (pseudonymous handle, unit,
+  language, effort scale), `coachProfile`, `plan`, `history.workingWeights`, the request, the
+  last seven days' sessions by date, name and exercise names, and a library slice for today's
+  equipment. These are the Coach's own consent categories (plan, training, profile, prefs). No
+  weigh-ins, no chat history, no name or user id.
+- **Rules.** Upstream's `common` prompt, then this task's own (`SESSION_PROMPT`). A run is
+  described in its exercise's line; climbing uses the person's own climbing exercise, if they
+  have one.
+- **Boundary.** Upstream's `validatePlan`, plus exactly one routine and no invented exercises,
+  with one repair round as upstream's pipeline does.
+- **Jobs.** In memory, one per profile. An answer is kept for 12 hours or until started or
+  discarded. The Coach's job log (the admin card) gets `kind: session`, the outcome and the time
+  taken, never content.
+
+Routes: `GET /api/trainer/quick-session` (`{ available, reason?, consent, job }`), `POST` (the
+request; 202), `DELETE` (drop the answer). Any signed-in profile may use them; trainer tools are
+not needed. `test/quick-session.test.js` pins the Coach internals this uses, so an upstream change
+to them fails the sync's tests before an image is built.
 
 ## Climbing sessions planned in steps (0.5.0, FIT-010)
 

@@ -31,6 +31,9 @@
  * routes that read another user's data are the progress view of a linked client, and a demo file
  * for that client; both need an active link.
  *
+ * FIT-008 adds a quick session from the AI Coach (quick-session.js), for any signed-in profile
+ * whose Coach is on and who has accepted it: GET, POST and DELETE /api/trainer/quick-session.
+ *
  * The server's dispatcher keys on the exact path, so ids travel in the body or the query string.
  * The two media routes sit under /api/media/ because that is the one prefix the web container's
  * nginx lets large bodies through, unbuffered (web/nginx.conf.template). Every library and upload
@@ -56,8 +59,9 @@ import { createAssignmentStore } from './assignments.js';
 import { snapshotHashes } from './snapshot.js';
 import { sweepOrphans } from './cleanup.js';
 import { linkRoutes } from './link-routes.js';
+import { quickSessionRoutes } from './quick-session.js';
 
-export const MODULE_VERSION = '0.5.0';
+export const MODULE_VERSION = '0.6.0';
 
 const ON = /^(1|true|yes|on)$/i;
 export const trainerEnabled = (env = process.env) => ON.test(env.TRAINER || '');
@@ -77,7 +81,7 @@ const intParam = v => (v == null ? undefined : /^\d{1,15}$/.test(v) ? Number(v) 
  * `opts` is for the tests: the clock, whether to start the hourly sweep, a log, and `internals`,
  * an object the factory fills with its stores and the sweep the timer runs.
  */
-export function trainerRoutes(helpers, env = process.env, { now = Date.now, timers = true, log = console, internals = null } = {}) {
+export function trainerRoutes(helpers, env = process.env, { now = Date.now, timers = true, log = console, internals = null, quickDeps = null } = {}) {
   if (!trainerEnabled(env)) return {};
   const missing = NEEDED.filter(k => typeof helpers?.[k] !== 'function');
   if (typeof helpers?.dataDir !== 'string' || !helpers.dataDir) missing.push('dataDir');
@@ -381,6 +385,11 @@ export function trainerRoutes(helpers, env = process.env, { now = Date.now, time
       json(res, 200, { ok: true, rev: out.doc.rev, wid: out.doc.wid, programme: p });
     }
   };
+
+  // FIT-008: a quick session from the AI Coach, for any signed-in profile (quick-session.js).
+  Object.assign(routes, quickSessionRoutes({
+    json, readSession, readBody, note, readStateStrict, UNREADABLE: helpers.UNREADABLE, dir, atomicWrite, now, log
+  }, quickDeps || undefined));
 
   Object.assign(routes, linkRoutes({
     json, readSession, readBody, note, now, trainerOf, log,

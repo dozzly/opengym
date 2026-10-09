@@ -58,3 +58,9 @@ export function withWrite(lib, kind, res) {
 
 /** The library a 409 carried, keeping what only the GET answer has (owner, media usage). */
 export const withConflict = (lib, current) => ({ ...current, owner: lib.owner, media: lib.media })
+
+/* ---------- FIT-008: a quick session from the Coach (api/trainer/quick-session.js) ---------- */
+
+export const getQuickSession = () => api('/api/trainer/quick-session')
+export const askQuickSession = request => send('/api/trainer/quick-session', 'POST', request)
+export const dropQuickSession = () => send('/api/trainer/quick-session', 'DELETE', {})

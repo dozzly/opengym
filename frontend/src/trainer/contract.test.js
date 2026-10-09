@@ -639,3 +639,23 @@ describe('FIT-004: the upstream surface delivery uses', () => {
     expect(sw).toContain("body: data.body || '',")
   })
 })
+
+describe('FIT-008: what starting a session the Coach proposed relies on', () => {
+  it('buildSessionEntries opens a routine that is not stored, its slot notes carried to the workout screen', () => {
+    const S = clone(DEF)
+    const entries = adapter.buildSessionEntries(S, { id: 'quick', name: 'Quick', ex: [{ id: '0043', sets: 3, reps: 5, note: 'Brace' }, { id: '0685', sets: 1, min: 10 }] })
+    expect(entries.map(e => e.id)).toEqual(['0043', '0685'])
+    expect(entries[0].target.note).toBe('Brace')
+    expect(entries[0].sets.filter(s => !s.warmup).length).toBe(3)
+  })
+  it('mergePlan adds a routine with a fresh id, its slots (notes too) as given, and leaves the week alone', () => {
+    const S = clone(DEF)
+    S.week = { 1: ['r_mine'] }
+    adapter.mergePlan(S, { opengym_plan: 1, name: 'Q', routines: [{ id: 'r1', name: 'Quick', ex: [{ id: '0043', sets: 3, reps: 5, note: 'Brace' }] }], week: {}, customEx: [] }, { schedule: false })
+    const r = S.routines.at(-1)
+    expect(r.id).not.toBe('r1')
+    expect(r.ex).toEqual([{ id: '0043', sets: 3, reps: 5, note: 'Brace' }])
+    expect(S.week).toEqual({ 1: ['r_mine'] })
+  })
+  // loadSheets (bwSheet, startFlow) is pinned in quick.ui.test.jsx: this file mocks sheets.jsx.
+})

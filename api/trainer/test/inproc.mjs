@@ -13,6 +13,7 @@ import { Readable } from 'node:stream';
 import { MediaError } from '../../media.js';
 import { trainerRoutes } from '../routes.js';
 import { LINK_ROUTES } from '../link-routes.js';
+import { QUICK_ROUTES } from '../quick-session.js';
 
 export const quiet = { log() {}, warn() {}, error() {} };
 /** Every route the module registers when it is on (and media uploads are). */
@@ -23,14 +24,15 @@ export const ROUTES = [
   'POST /api/trainer/library/exercises', 'PUT /api/trainer/library/exercises', 'DELETE /api/trainer/library/exercises',
   'POST /api/trainer/library/programmes', 'PUT /api/trainer/library/programmes', 'DELETE /api/trainer/library/programmes',
   'PUT /api/media/trainer', 'GET /api/media/trainer',
-  ...LINK_ROUTES
+  ...LINK_ROUTES,
+  ...QUICK_ROUTES
 ];
 /** server.js's own marker for a state file that does not parse (a stand-in: the module only ever
  *  compares with the one it is handed). */
 export const STATE_UNREADABLE = Symbol('unreadable');
 export const DAY = 86400000;
 
-export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], emails = {}, dataDir } = {}) {
+export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], emails = {}, dataDir, quickDeps = null } = {}) {
   uids = [...uids];
   const dir = dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'trainer-inproc-'));
   if (!dataDir) t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -76,7 +78,7 @@ export function harness(t, { env = {}, uids = ['u_anna', 'u_bea', 'u_cat'], emai
   /** Writes a client's state file, as PUT /api/data would have left it (tests only). */
   const writeState = (uid, S) => fs.writeFileSync(stateFile(uid), JSON.stringify(S));
   const internals = {};
-  const routes = trainerRoutes(helpers, { TRAINER: '1', MEDIA_MIN_FREE_MB: '0', ...env }, { now: () => clock.t, timers: false, log: quiet, internals });
+  const routes = trainerRoutes(helpers, { TRAINER: '1', MEDIA_MIN_FREE_MB: '0', ...env }, { now: () => clock.t, timers: false, log: quiet, internals, quickDeps });
 
   async function call(method, url, { uid, body, upload } = {}) {
     const key = method + ' ' + new URL(url, 'http://x').pathname;
