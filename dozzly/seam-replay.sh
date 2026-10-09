@@ -42,6 +42,11 @@ apply_seam() {
 }" frontend/src/views/Home.jsx
   sed -i "0,/^    {\/\* Jump to the gym check-in cards/{/^    {\/\* Jump to the gym check-in cards/i \    <TrainerHomeCard />
 }" frontend/src/views/Home.jsx
+  # frontend/src/views/Workout.jsx: import after the first import, the quick session under Freestyle (FIT-008)
+  sed -i "1a import { QuickSessionStart } from '../trainer/index.js'" frontend/src/views/Workout.jsx
+  # (the anchor is the Freestyle button; v1.3.2 to v1.3.9 started it with startFlow(null))
+  sed -i "0,/^    <Button icon=\"shuffle\" onClick={() => startFlow(/{/^    <Button icon=\"shuffle\" onClick={() => startFlow(/a \    <QuickSessionStart />
+}" frontend/src/views/Workout.jsx
   # frontend/src/views/Settings.jsx: the source link (gitlab before v1.3.9, github since).
   sed -i -E 's#<a href="https://(gitlab|github)\.com/DuarteSantos8/open[Gg]ym" target="_blank" rel="noopener">(source code|\{t\(.Source code.\)\})</a>#<a href="https://github.com/dozzly/opengym" target="_blank" rel="noopener">\2</a>#' frontend/src/views/Settings.jsx
   # …and upstream's test that pins that link (since v1.3.9), so upstream's own suite stays green.
@@ -50,10 +55,10 @@ apply_seam() {
   fi
   mkdir -p api/trainer frontend/src/trainer
   printf '%s\n' "export const trainerRoutes = () => ({});" > api/trainer/routes.js
-  printf '%s\n' "export const TrainerRoot = () => null" "export const TrainerInbox = () => null" "export const TrainerHomeCard = () => null" > frontend/src/trainer/index.js
+  printf '%s\n' "export const TrainerRoot = () => null" "export const TrainerInbox = () => null" "export const TrainerHomeCard = () => null" "export const QuickSessionStart = () => null" > frontend/src/trainer/index.js
   G add -A && G commit -qm seam
 }
-seam_files="api/server.js api/Dockerfile frontend/src/App.jsx frontend/src/views/Home.jsx frontend/src/views/Settings.jsx frontend/src/views/Settings.reset.test.jsx"
+seam_files="api/server.js api/Dockerfile frontend/src/App.jsx frontend/src/views/Home.jsx frontend/src/views/Workout.jsx frontend/src/views/Settings.jsx frontend/src/views/Settings.reset.test.jsx"
 check_seam() {   # every hook line present exactly once
   local n=0
   n=$((n + $(grep -c "^import { trainerRoutes } from './trainer/routes.js';" api/server.js)))
@@ -65,11 +70,13 @@ check_seam() {   # every hook line present exactly once
   n=$((n + $(grep -c 'href="https://github.com/dozzly/opengym"' frontend/src/views/Settings.jsx)))
   n=$((n + $(grep -c "^import { TrainerHomeCard } from '../trainer/index.js'" frontend/src/views/Home.jsx)))
   n=$((n + $(grep -c '^    <TrainerHomeCard />$' frontend/src/views/Home.jsx)))
+  n=$((n + $(grep -c "^import { QuickSessionStart } from '../trainer/index.js'" frontend/src/views/Workout.jsx)))
+  n=$((n + $(grep -c '^    <QuickSessionStart />$' frontend/src/views/Workout.jsx)))
   # the pinned link in upstream's test, where that test exists
   if grep -q "links the source code" frontend/src/views/Settings.reset.test.jsx 2>/dev/null; then
     grep -q "toBe('https://github.com/dozzly/opengym')" frontend/src/views/Settings.reset.test.jsx || return 1
   fi
-  [ "$n" = 9 ]
+  [ "$n" = 11 ]
 }
 
 apply_seam

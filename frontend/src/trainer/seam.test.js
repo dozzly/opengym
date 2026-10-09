@@ -43,6 +43,20 @@ describe('Home.jsx', () => {
   })
 })
 
+describe('Workout.jsx', () => {
+  const workout = read('../views/Workout.jsx').split('\n')
+  it('imports the quick session once, from the module\'s index, right after the first import', () => {
+    expect(workout.findIndex(l => l === "import { QuickSessionStart } from '../trainer/index.js'")).toBe(1)
+    expect(workout.filter(l => l.includes('QuickSessionStart }')).length).toBe(1)
+  })
+  it('mounts it once on the start screen, directly under "Freestyle workout"', () => {
+    const at = workout.findIndex(l => l === '    <QuickSessionStart />')
+    expect(at).toBeGreaterThan(0)
+    expect(workout.filter(l => l.includes('<QuickSessionStart />')).length).toBe(1)
+    expect(workout[at - 1]).toMatch(/^    <Button icon="shuffle" onClick=\{\(\) => startFlow\(\[\]\)\}>\{t\('Freestyle workout/)
+  })
+})
+
 describe('Settings.jsx', () => {
   it('offers this fork as the source of the running version (AGPL-3.0 section 13), and nothing upstream\'s', () => {
     const settings = read('../views/Settings.jsx')
