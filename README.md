@@ -11,20 +11,25 @@ on your phone, synced across your devices, behind your own passkey login.
 [![Online](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Finvites%2Fe62jY6fwVb%3Fwith_counts%3Dtrue&query=%24.approximate_presence_count&suffix=%20online&label=&logo=discord&logoColor=white&color=3BA55C&style=for-the-badge)](https://discord.gg/e62jY6fwVb)
 [![GitHub stars](https://img.shields.io/github/stars/DuarteSantos8/openGym?style=for-the-badge&logo=github&logoColor=white&color=24292f)](https://github.com/DuarteSantos8/openGym/stargazers)
 
+<a href="https://trendshift.io/repositories/88268?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-88268" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/88268" alt="DuarteSantos8%2FopenGym | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/88268?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-88268" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/88268/weekly?language=JavaScript" alt="DuarteSantos8%2FopenGym | Trendshift" width="250" height="55"/></a>
+
 [![Release](https://img.shields.io/github/v/release/DuarteSantos8/openGym?style=flat-square)](https://github.com/DuarteSantos8/openGym/releases)
+[![Downloads](https://img.shields.io/github/downloads/DuarteSantos8/openGym/total?style=flat-square&label=downloads)](https://github.com/DuarteSantos8/openGym/releases)
 [![Tests](https://img.shields.io/github/actions/workflow/status/DuarteSantos8/openGym/test.yml?branch=main&label=tests&style=flat-square)](https://github.com/DuarteSantos8/openGym/actions/workflows/test.yml)
 [![Pipeline](https://gitlab.com/DuarteSantos8/opengym/badges/main/pipeline.svg?style=flat-square)](https://gitlab.com/DuarteSantos8/opengym/-/pipelines)
 [![Coverage](https://gitlab.com/DuarteSantos8/opengym/badges/main/coverage.svg?job=test:frontend&style=flat-square)](https://gitlab.com/DuarteSantos8/opengym/-/pipelines?ref=main)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-a3e635?style=flat-square)](LICENSE)
 
-[Website](https://opengym.duarte-santos.ch) ·
-[Live demo](https://opengym.duarte-santos.ch/demo/) ·
+[Website](https://opengym.ch) ·
+[Live demo](https://opengym.ch/demo/) ·
 [Android APK](https://github.com/DuarteSantos8/openGym/releases/latest) ·
 [Self-hosting guide](docs/SELF_HOSTING.md) ·
 [Roadmap](ROADMAP.md) ·
 [Changelog](CHANGELOG.md)
 
 <a href="https://buymeacoffee.com/duartesantos" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45" width="163"></a>
+<a href="https://ko-fi.com/opengym" target="_blank"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support openGym on Ko-fi" height="45"></a>
 
 </div>
 
@@ -46,7 +51,7 @@ sign-in, works offline, syncs between your phone and your laptop.
 No account on someone else's server, no subscription, no ads, no telemetry. One
 `docker compose up` and it's running.
 
-The [in-browser demo](https://opengym.duarte-santos.ch/demo/) is the real app with example data,
+The [in-browser demo](https://opengym.ch/demo/) is the real app with example data,
 if you want to try it before installing anything.
 
 ## Features
@@ -183,7 +188,7 @@ The same codebase builds a standalone app with Capacitor: no account, no server,
 on the phone, with native reminders and a rest countdown in the notification shade.
 
 - **Android:** download the signed APK from the [latest release](https://github.com/DuarteSantos8/openGym/releases/latest)
-  or the [website](https://opengym.duarte-santos.ch). Each build sits next to its `.sha256`, and
+  or the [website](https://opengym.ch). Each build sits next to its `.sha256`, and
   the app checks for updates itself. openGym is deliberately not on the Play Store.
 - **iPhone:** Apple doesn't allow installs outside the App Store. Self-host and add the PWA to your
   home screen from Safari, or build the native app onto your own device with Xcode.
@@ -208,7 +213,7 @@ Details and build instructions: [docs/MOBILE.md](docs/MOBILE.md).
 The training logic (progression rules, 1RM, how a logged session is read back) lives in pure
 functions under `frontend/src/lib/` with tests beside them. The HTTP API is documented as an
 OpenAPI spec in [`api/openapi.yaml`](api/openapi.yaml), browsable at
-[opengym.duarte-santos.ch/api.html](https://opengym.duarte-santos.ch/api.html).
+[opengym.ch/api.html](https://opengym.ch/api.html).
 
 ### How sync works
 
