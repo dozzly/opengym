@@ -236,6 +236,14 @@ describe('applySnapshot', () => {
     expect(deliverable(legacy, 'kg').routines[0].ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100 })
   })
 
+  it('a slot\'s instructions (its note) reach the client\'s routine, where the workout screen shows them', () => {
+    const lib = library()
+    lib.programmes[0].routines[0].ex[1].note = '5 × 1 km at tempo, 90 s jog between'
+    const S = client()
+    applySnapshot(S, snapshotProgramme(lib, TP1))
+    expect(routine(S, R1).ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100, note: '5 × 1 km at tempo, 90 s jog between' })
+  })
+
   it('a routine this trainer delivered before (same id, the trainer\'s marker) is replaced in place, on a new link or after an Undo', () => {
     const S = client()
     applySnapshot(S, snapshotProgramme(library(), TP1, { assignmentId: 'lk_old', rev: 3 }))

@@ -76,6 +76,8 @@ export const TEXT = {
   sets: 'Sets',
   reps: 'Reps',
   seconds: 'Seconds',
+  slotInstructionsFor: name => `Instructions for ${name}`,
+  slotInstructionsHint: 'Instructions your client sees during the workout: paces, grades, rest, cues',
   search: 'Search exercises',
   fromLibrary: 'Your library',
   builtIn: 'Built-in exercises',
@@ -229,7 +231,7 @@ export const LINK_TEXT = {
   newIcon: 'new icon',
   added: names => `added ${names}`,
   removed: names => `removed ${names}`,
-  changed: names => `sets, reps or weight changed for ${names}`,
+  changed: names => `sets, reps, weight or instructions changed for ${names}`,
   reordered: 'new order',
   newExercise: name => `New exercise: ${name}`,
   revisedExercise: (name, from, to) => (from != null && to != null ? `Updated exercise: ${name} (revision ${from} to ${to})` : `Updated exercise: ${name}`),
@@ -258,4 +260,10 @@ export const HOME_TEXT = {
   haveCode: 'Have a code from a trainer?',
   haveCodeSub: 'Link with your trainer',
   hide: 'Hide',
+}
+
+// The Authentik proxy's session keeper (EdgeSessionKeeper.jsx).
+export const EDGE_TEXT = {
+  stale: 'Your sign-in needs a refresh to keep syncing. Your workout is kept.',
+  reconnect: 'Reconnect',
 }

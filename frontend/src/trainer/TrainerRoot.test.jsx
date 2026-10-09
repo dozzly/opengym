@@ -127,7 +127,7 @@ describe('the trainer page', () => {
     connect(ANNA.id)
     await mount(ANNA, '/trainer')
     expect(host.querySelector('.trainer-root')).toBeTruthy()
-    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.1')
+    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.2')
     expect(api.mock.calls.filter(c => c[0] === '/api/trainer/status')).toHaveLength(1)
   })
 
@@ -290,13 +290,14 @@ describe('trainer tools', () => {
     await click(buttons().find(b => b.querySelector('.lrow-t')?.textContent.toLowerCase() === 'barbell full squat'))
     const reps = host.querySelectorAll('[data-slot="0043"] input')[1]
     await type(reps, '5')
+    await type(host.querySelector(`textarea[aria-label="${TEXT.slotInstructionsFor('barbell full squat')}"]`), 'Pause 2 s at the bottom')
     await click(button(TEXT.addRoutine))
     await click(button(TEXT.create))
     expect(where).toBe('/trainer')
     const [p] = s.internals.library.read(ANNA.id).programmes
     expect(p.name).toBe('Block 1')
     expect(p.routines.map(r => r.name)).toEqual(['Day 1', 'Day 2'])
-    expect(p.routines[0].ex).toEqual([{ id: ex.id, sets: 3, reps: 10 }, { id: '0043', catalog: 'og1', sets: 3, reps: 5 }])
+    expect(p.routines[0].ex).toEqual([{ id: ex.id, sets: 3, reps: 10 }, { id: '0043', catalog: 'og1', sets: 3, reps: 5, note: 'Pause 2 s at the bottom' }])
     expect(text()).toContain('Block 1')
   })
 

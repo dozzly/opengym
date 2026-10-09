@@ -11,7 +11,7 @@
 //
 // `before` and `after` are { routines, customEx }, either of them null for "nothing yet". A routine
 // is matched by id (the module keeps ids stable across revisions); its exercise slots by exercise
-// id, in order, so a slot whose sets, reps or weight moved is `changed`, and the same slots in
+// id, in order, so a slot whose sets, reps, weight or instructions (`note`) moved is `changed`, and the same slots in
 // another order are `reordered`. `exercises` are the trainer's own (custom exercises with `src`):
 // `revised` is a new revision of one the plan already had (src.exRev went up). Bookkeeping fields
 // (`_ts`, `_f`, the delivery marker) are never a change.

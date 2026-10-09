@@ -206,7 +206,7 @@ describe('the trainer\'s Clients section', () => {
     expect(text()).toContain(T.minutes(2400))
     await click(button(T.review))
     expect(text()).toContain(T.reviewTitle(2, 1))
-    expect(text()).toContain('Day 1: sets, reps or weight changed for Split squat')
+    expect(text()).toContain('Day 1: sets, reps, weight or instructions changed for Split squat')
     expect(text()).toContain(T.revisedExercise('Split squat', 1, 2))
     // Meanwhile another tab publishes: this one's publish is a conflict, reloaded and said.
     await publish(link.id, prog.id, 'from the other tab')
@@ -465,7 +465,8 @@ describe('the inbox', () => {
     await act(async () => document.dispatchEvent(new Event('visibilitychange')))
     await settle()
     expect(assignmentCalls()).toBe(3)
-    const tick = every.mock.calls.find(c => c[1] === POLL_MS)
+    // The inbox's timer is the last one at POLL_MS (the proxy-session keeper, mounted beside it, has its own).
+    const tick = every.mock.calls.filter(c => c[1] === POLL_MS).at(-1)
     expect(POLL_MS).toBe(60000)
     expect(tick).toBeTruthy()
     await act(async () => tick[0]())

@@ -8,7 +8,7 @@
 // neither of which may go into a programme.
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { Button, CATALOGUE, Row, SearchField, Section, Segmented, TextField, exerciseNameFor, searchExercises, vocabText } from './adapter.js'
+import { Button, CATALOGUE, Row, SearchField, Section, Segmented, TextArea, TextField, exerciseNameFor, searchExercises, vocabText } from './adapter.js'
 import { LIMITS, LibraryError, byId, cleanProgrammeInput, newRoutineId, programmeExerciseIds, resolveSlot, slotFor } from './library.js'
 import { writeErrorText } from './useTrainer.js'
 import Page, { Note } from './Page.jsx'
@@ -96,7 +96,10 @@ export default function ProgrammeEditor({ lib, write }) {
 
 const num = v => (v === '' ? null : Number(v))
 
-/** One exercise slot: what it names (unknown ones say so and stay), sets and reps or seconds. */
+/** One exercise slot: what it names (unknown ones say so and stay), sets and reps or seconds, and
+ *  the trainer's instructions for it. Those travel with the plan as the slot's `note`, which
+ *  upstream shows on the workout screen under the exercise ("the plan's instruction"): a run's
+ *  paces, a bouldering session's grades and rest, a lift's cues. */
 function SlotRow({ slot, what, onChange, onRemove }) {
   const title = what.kind === 'library' ? what.ex.n + (what.ex.archived ? ` (${TEXT.archivedTag})` : '')
     : what.kind === 'builtin' ? exerciseNameFor(what.ex) : TEXT.unknownExercise(what.id)
@@ -117,6 +120,10 @@ function SlotRow({ slot, what, onChange, onRemove }) {
         <input className="input" type="number" inputMode="numeric" min="1" max="999" style={{ width: 64, marginInlineStart: 6 }}
           value={slot.reps ?? ''} onChange={e => onChange({ reps: num(e.target.value) })} /></label>}
     <Button size="sm" variant="ghost" onClick={onRemove}>{TEXT.removeExercise}</Button>
+    <div style={{ flexBasis: '100%' }}>
+      <TextArea aria-label={TEXT.slotInstructionsFor(title)} placeholder={TEXT.slotInstructionsHint} rows={2}
+        maxLength={LIMITS.note} value={slot.note || ''} onChange={e => onChange({ note: e.target.value })} />
+    </div>
   </div>
 }
 

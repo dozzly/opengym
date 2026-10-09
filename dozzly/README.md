@@ -445,6 +445,33 @@ sign-in e-mail (upstream's, set in Settings → Account after a password) on bot
   account and is the key for upstream's OIDC sign-in later.
 - Without `PASSWORD_LOGIN` there are no e-mails, so nothing is required and none is shown.
 
+## Slot instructions (0.3.2)
+
+Each exercise slot in the programme editor has an Instructions field: paces, grades, rest, cues,
+up to 500 characters. It is the slot's `note`, which the library already validated (`cleanSlot`)
+and the snapshot already carried. `parsePlan` keeps it, and upstream's workout screen shows it under
+the exercise name (`cfg.note`). A changed instruction counts as a changed slot in the diff ("sets,
+reps, weight or instructions changed"). Until FIT-009 and FIT-010 bring structured runs and
+climbing sessions, this is where a trainer writes them.
+
+## The proxy session (0.3.2)
+
+Behind an authenticating proxy (Authentik on dozzly), the proxy's session can end while the app
+stays open. From then on, every `/api/*` call is redirected to the sign-in page. An installed app
+cannot follow that redirect, so upstream shows "Your server can't be reached". `EdgeSessionKeeper`
+(mounted by the inbox line of the seam, for everyone, with the module on or off) asks
+`api/health` with `redirect: 'manual'`. It asks on start, on focus, when the page becomes visible
+and every 60 seconds. A redirect, and nothing else, means the proxy session ended:
+- With no workout running, it reloads the page once, so the browser goes through the proxy's
+  sign-in, which is usually silent, and comes back.
+- During a workout, or within two minutes of its last reload on this tab (so it never loops), it
+  shows a banner with Reconnect instead. The workout is kept: it lives in the store and
+  `localStorage`.
+
+Offline, or a server that answers, changes nothing. The real fix is a longer proxy session
+(dozzly: `access_token_validity: days=7` on openGym's Authentik provider). The keeper covers the
+renewal when that session does end.
+
 ## Data contract
 
 An applied assignment leaves a marker on the client's own routines: `assigned: { by,

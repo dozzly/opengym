@@ -1,6 +1,7 @@
 // Always mounted (App.jsx, the seam's inbox line), outside the routed view: where a plan update
 // from the client's trainer arrives (ADR 029, decision 5; FIT-004). Nothing unless the server
-// reports the module on and someone is signed in.
+// reports the module on and someone is signed in, apart from the proxy-session keeper
+// (EdgeSessionKeeper.jsx), which it mounts for everyone.
 //
 // It asks GET /api/trainer/assignment when it mounts, when the window gets the focus back, when the
 // page becomes visible, every 60 seconds while it is, and when the trainer page asks (after Accept
@@ -19,13 +20,18 @@ import { deliverable } from './snapshot.js'
 import { diffPlans, heldPlan } from './diff.js'
 import DiffList, { exerciseLabel } from './DiffList.jsx'
 import { LINK_TEXT as T } from './strings.js'
+import EdgeSessionKeeper from './EdgeSessionKeeper.jsx'
 
 export default function TrainerInbox() {
   const status = useTrainerStatus()
   const user = useUser()
   const ready = useProfileReady()
-  if (!status?.enabled || !user?.id || !ready) return null
-  return <Inbox key={user.id} uid={user.id} />
+  // The proxy-session keeper runs for everyone, module on or off: the redirect it repairs comes
+  // from the Authentik proxy in front, not from the trainer module.
+  return <>
+    <EdgeSessionKeeper />
+    {status?.enabled && user?.id && ready && <Inbox key={user.id} uid={user.id} />}
+  </>
 }
 
 /** The toast after an apply, with its Undo. */

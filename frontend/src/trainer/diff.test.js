@@ -61,7 +61,7 @@ describe('diffPlans', () => {
     expect(diffLines(d, id => names[id] || id, { showUnused: true })).toEqual([
       LINK_TEXT.newRoutine('Upper'),
       LINK_TEXT.removedRoutine('Core'),
-      'Lower body: renamed from Lower; new icon; added Nordic curl; sets, reps or weight changed for barbell full squat',
+      'Lower body: renamed from Lower; new icon; added Nordic curl; sets, reps, weight or instructions changed for barbell full squat',
       LINK_TEXT.newExercise('Nordic curl'),
       LINK_TEXT.revisedExercise('Split squat', 1, 2),
       LINK_TEXT.unusedExercise('Copenhagen plank'),
