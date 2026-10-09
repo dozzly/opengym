@@ -46,7 +46,8 @@ export default function TrainerHome({ module, cap, lib, error, setEnabled }) {
     subtitle={TEXT.routineCount(p.routines.length)} accessory="chevron" onClick={() => nav(`programmes/${p.id}`)} />
 
   return <Page title={TEXT.title} backLabel={TEXT.back}>
-    <YourTrainer />
+    {/* Folded into one row for someone with trainer tools on: they rarely need a trainer of their own. */}
+    <YourTrainer folded={!!cap?.enabled} />
     <Note alert>{error}</Note>
     {cap && <Section footer={cap.allowed || cap.enabled ? `${TEXT.enableFooter} ${TEXT.offKeeps}` : TEXT.notAllowed}>
       <Row icon="clipboard" title={TEXT.enable}>

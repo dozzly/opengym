@@ -120,6 +120,8 @@ const plural = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
 export const LINK_TEXT = {
   // The client's side (#/trainer, "Your trainer")
   yourTrainer: 'Your trainer',
+  haveCode: 'Have a code from a trainer?',
+  haveCodeSub: 'Link with your own trainer',
   unlinkedFooter: 'A trainer gives you a code. With it, they see your name and sign-in e-mail and the workouts you do on the plan they send you, and can send you plan updates. Nothing else of yours.',
   code: 'Invite code',
   codePlaceholder: 'PT-XXXXXXXXXXXX',

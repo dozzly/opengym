@@ -19,8 +19,10 @@ function ModeRows({ value, onChange, disabled }) {
     accessory={value === m ? 'check' : 'none'} onClick={disabled ? undefined : () => onChange(m)} />)
 }
 
-export default function YourTrainer() {
+export default function YourTrainer({ folded = false } = {}) {
   const [link, setLink] = useState(undefined)   // undefined: loading; null: none; else the link
+  // Folded (trainer tools on, no trainer of one's own): one row that opens the form.
+  const [open, setOpen] = useState(false)
   const [code, setCode] = useState('')
   const [mode, setMode] = useState('co-managed')
   const [share, setShare] = useState(false)
@@ -64,6 +66,14 @@ export default function YourTrainer() {
   }
 
   if (link === undefined) return <Note alert>{msg?.alert}</Note>
+
+  if (!link && folded && !open) {
+    return <div className="trainer-your-trainer">
+      <Section>
+        <Row icon="key" title={T.haveCode} subtitle={T.haveCodeSub} accessory="chevron" onClick={() => setOpen(true)} />
+      </Section>
+    </div>
+  }
 
   if (!link) {
     return <div className="trainer-your-trainer">

@@ -288,6 +288,27 @@ describe('the client\'s "Your trainer"', () => {
   })
 })
 
+describe('"Your trainer" for someone with trainer tools on', () => {
+  it('is folded into one "Have a code from a trainer?" row, which opens the form', async () => {
+    connect()
+    await annasLibrary()   // Anna's tools are on
+    await mount(ANNA)
+    expect(text()).toContain(T.haveCode)
+    expect(host.querySelector('#trainer-invite-code')).toBeNull()
+    expect(text()).not.toContain(T.unlinkedFooter)
+    await click(buttons().find(b => b.textContent.includes(T.haveCode)) || [...host.querySelectorAll('.lrow')].find(r => r.textContent.includes(T.haveCode)))
+    expect(host.querySelector('#trainer-invite-code')).toBeTruthy()
+    expect(text()).toContain(T.unlinkedFooter)
+  })
+  it('stays open, as before, for someone without trainer tools', async () => {
+    connect()
+    await annasLibrary()
+    await mount(CAT)
+    expect(host.querySelector('#trainer-invite-code')).toBeTruthy()
+    expect(text()).not.toContain(T.haveCode)
+  })
+})
+
 describe('sign-in e-mails (PASSWORD_LOGIN on)', () => {
   const PW = { PASSWORD_LOGIN: '1' }
   it('without one, the trainer cannot invite and the client cannot accept, and each is told how to add it', async () => {
