@@ -106,6 +106,23 @@ test('a programme names only library exercises that exist and are not archived, 
   assert.throws(() => cleanProgrammeInput(body([{ id: 'c123' }]), { exercises: library }), refusal('invalid'), 'a personal custom exercise is no library exercise');
 });
 
+test('a cardio slot may carry a run planned in steps (FIT-009); run and instructions must fit in one note', () => {
+  const run = { steps: [
+    { kind: 'warmup', km: 2, target: { zone: 2 } },
+    { kind: 'repeat', times: 5, work: { km: 1, target: { pace: 270 } }, rest: { sec: 90, how: 'jog' } },
+    { kind: 'cooldown', km: 1 }
+  ] };
+  const one = slot => cleanProgrammeInput({ name: 'P', routines: [routine({ ex: [slot] })] }, { exercises: library });
+  const p = one({ id: '0685', sets: 1, min: 40, note: 'Flat route', run: { ...run, junk: 1 } });
+  assert.deepEqual(p.routines[0].ex[0], { id: '0685', catalog: 'og1', sets: 1, min: 40, note: 'Flat route', run });
+  // It is stored as written and reads back the same.
+  const doc = { ...emptyLibrary(), rev: 1, wid: 'ab'.repeat(8), programmes: [programmeRecord({ id: 'tp_' + '2'.repeat(16), rev: 1, archived: false, createdAt: 1, updatedAt: 1 }, p)] };
+  assert.deepEqual(cleanStoredLibrary(JSON.parse(JSON.stringify(doc))).programmes[0].routines[0].ex[0].run, run);
+  assert.throws(() => one({ id: '0685', run: { steps: [{ kind: 'easy', km: 1, target: { zone: 9 } }] } }), refusal('invalid', 'routines.0.ex.0.run.steps.0.target.zone'));
+  assert.throws(() => one({ id: '0685', run: { steps: [] } }), refusal('invalid', 'routines.0.ex.0.run'));
+  assert.throws(() => one({ id: '0685', note: 'x'.repeat(450), run }), refusal('too-long', 'routines.0.ex.0.run'));
+});
+
 test('a programme is refused on a bad slot value, a bad week or too many of anything', () => {
   const tryWith = over => () => cleanProgrammeInput({ name: 'P', routines: [routine()], ...over }, { exercises: library });
   const slot = s => ({ routines: [routine({ ex: [{ id: TX1, ...s }] })] });

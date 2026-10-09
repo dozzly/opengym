@@ -38,6 +38,7 @@
 // is edited, and drops what it does not know.
 import { parsePlan, deleteRoutine, ASSIGNED } from './adapter.js'
 import { EX_ID_RE, resolveBuiltin, byId, CATALOGS } from './library.js'
+import { deliveredNote } from './run.js'
 
 export const SNAPSHOT_FORMAT = 1
 
@@ -78,7 +79,9 @@ export function snapshotProgramme(library, programmeId, { trainer = library?.own
   const routines = p.routines.map(r => {
     const ex = []
     r.ex.forEach((slot, index) => {
-      const { id, catalog, ...cfg } = slot
+      const { id, catalog, run, ...cfg } = slot
+      // A structured run (FIT-009) goes out as text, in the note, ahead of the trainer's own.
+      if (run) cfg.note = deliveredNote(run, cfg.note)
       if (EX_ID_RE.test(id)) {
         const lib = exercises.get(id)
         if (!lib) { unresolved.push({ routine: r.id, index, id, catalog: null }); return }

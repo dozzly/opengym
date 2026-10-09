@@ -454,6 +454,38 @@ the exercise name (`cfg.note`). A changed instruction counts as a changed slot i
 reps, weight or instructions changed"). Until FIT-009 and FIT-010 bring structured runs and
 climbing sessions, this is where a trainer writes them.
 
+## Runs planned in steps (0.4.0, FIT-009)
+
+A cardio slot (an exercise whose body part is cardio: the built-in run, a bike, a library exercise)
+shows Minutes instead of reps, and can carry a run planned in steps (`RunEditor.jsx`):
+- Warm-up, easy, steady, tempo, fast, recovery and cool-down steps, each a distance (km or m) or
+  a time (min or s).
+- Repeats: times × a distance or a time, with a jog, walk or rest between, or no recovery.
+- Each step or repeat may have a target: a pace (`4:30` per km), a pace range, a speed in km/h, or
+  a heart-rate zone 1 to 5. Up to 10 steps.
+
+It is information only: no GPS, no live guidance, no watch export. The library stores the steps on
+the slot as `run` (`run.js` `cleanRun`, mirrored in `api/trainer/run.js`; `run-parity.test.js`
+pins the two together). The published snapshot carries no `run`. Both snapshot builders render it
+into the slot's `note` (`deliveredNote`): a total, one numbered line per step, then the trainer's
+own instructions after a blank line:
+
+    Total: 8 km + 7:30 min
+    1. Warm-up 2 km in heart-rate zone 2
+    2. 5 × 1 km at 4:30/km, 90 s jog between
+    3. Cool-down 1 km
+
+    Flat route
+
+The editor shows that text as the trainer types, with its length. The run and the instructions
+together must fit upstream's 500-character note (400 `too-long`, field `….run`, otherwise). A changed
+run is a changed slot in the diff. Upstream plans distance for cardio (v1.3.12) and intervals
+(v1.4.4); the steps are kept so they can map onto those.
+
+The exercise picker now lists the closest matches first: the whole name, then its start, then a
+word's start, then anywhere. Upstream's search matches anywhere, so "run" used to list thirty
+crunches and never the run.
+
 ## The proxy session (0.3.2)
 
 Behind an authenticating proxy (Authentik on dozzly), the proxy's session can end while the app

@@ -12,6 +12,7 @@ import { Button, CATALOGUE, Row, SearchField, Section, Segmented, TextArea, Text
 import { LIMITS, LibraryError, byId, cleanProgrammeInput, newRoutineId, programmeExerciseIds, resolveSlot, slotFor } from './library.js'
 import { writeErrorText } from './useTrainer.js'
 import Page, { Note } from './Page.jsx'
+import RunEditor from './RunEditor.jsx'
 import { TEXT, invalidText } from './strings.js'
 
 const clone = v => JSON.parse(JSON.stringify(v))
@@ -76,7 +77,7 @@ export default function ProgrammeEditor({ lib, write }) {
         onChange={patch => change(d => { Object.assign(d.routines[ri].ex[si], patch); for (const k of Object.keys(patch)) if (patch[k] == null) delete d.routines[ri].ex[si][k] })}
         onRemove={() => change(d => { d.routines[ri].ex.splice(si, 1) })} />)}
       {picking === ri
-        ? <Picker lib={lib} onPick={ex => { change(d => { d.routines[ri].ex.push(slotFor(ex)) }); setPicking(null) }} onClose={() => setPicking(null)} />
+        ? <Picker lib={lib} onPick={ex => { change(d => { d.routines[ri].ex.push(slotFor(ex, isCardio(ex) ? CARDIO_SLOT : undefined)) }); setPicking(null) }} onClose={() => setPicking(null)} />
         : r.ex.length < LIMITS.slots && <Row icon="plusCircle" title={TEXT.addExercise} onClick={() => setPicking(ri)} />}
       {draft.routines.length > 1 && <Row icon="trash" danger title={TEXT.removeRoutine} onClick={() => removeRoutine(ri)} />}
     </Section>)}
@@ -95,15 +96,21 @@ export default function ProgrammeEditor({ lib, write }) {
 }
 
 const num = v => (v === '' ? null : Number(v))
+// Upstream logs cardio as duration and speed (lib/history.js defaultConfig: { sets: 1, min: 20,
+// speed: 8 }); the speed is the client's to log, so a programme leaves it out.
+const isCardio = ex => ex?.bp === 'cardio'
+const CARDIO_SLOT = Object.freeze({ sets: 1, min: 20 })
 
-/** One exercise slot: what it names (unknown ones say so and stay), sets and reps or seconds, and
- *  the trainer's instructions for it. Those travel with the plan as the slot's `note`, which
- *  upstream shows on the workout screen under the exercise ("the plan's instruction"): a run's
- *  paces, a bouldering session's grades and rest, a lift's cues. */
+/** One exercise slot: what it names (unknown ones say so and stay), sets and reps, seconds or (for
+ *  cardio) minutes, and the trainer's instructions for it. Those travel with the plan as the slot's
+ *  `note`, which upstream shows on the workout screen under the exercise ("the plan's
+ *  instruction"): a run's paces, a bouldering session's grades and rest, a lift's cues. A cardio
+ *  slot can also carry a run planned in steps (RunEditor.jsx), delivered as text ahead of them. */
 function SlotRow({ slot, what, onChange, onRemove }) {
   const title = what.kind === 'library' ? what.ex.n + (what.ex.archived ? ` (${TEXT.archivedTag})` : '')
     : what.kind === 'builtin' ? exerciseNameFor(what.ex) : TEXT.unknownExercise(what.id)
   const timed = slot.mode === 'time'
+  const cardio = isCardio(what.ex)
   return <div className="lrow" data-slot={slot.id} style={{ flexWrap: 'wrap', gap: 8 }}>
     <span className="lrow-m">
       <span className={'lrow-t' + (what.kind === 'builtin' ? ' capitalize' : '')}>{title}</span>
@@ -112,7 +119,11 @@ function SlotRow({ slot, what, onChange, onRemove }) {
     <label className="small dim">{TEXT.sets}
       <input className="input" type="number" inputMode="numeric" min="1" max="20" style={{ width: 64, marginInlineStart: 6 }}
         value={slot.sets ?? ''} onChange={e => onChange({ sets: num(e.target.value) })} /></label>
-    {timed
+    {cardio
+      ? <label className="small dim">{TEXT.minutes}
+        <input className="input" type="number" inputMode="decimal" min="0.5" style={{ width: 72, marginInlineStart: 6 }}
+          value={slot.min ?? ''} onChange={e => onChange({ min: num(e.target.value) })} /></label>
+      : timed
       ? <label className="small dim">{TEXT.seconds}
         <input className="input" type="number" inputMode="numeric" min="1" style={{ width: 72, marginInlineStart: 6 }}
           value={slot.sec ?? ''} onChange={e => onChange({ sec: num(e.target.value) })} /></label>
@@ -124,15 +135,27 @@ function SlotRow({ slot, what, onChange, onRemove }) {
       <TextArea aria-label={TEXT.slotInstructionsFor(title)} placeholder={TEXT.slotInstructionsHint} rows={2}
         maxLength={LIMITS.note} value={slot.note || ''} onChange={e => onChange({ note: e.target.value })} />
     </div>
+    {(cardio || slot.run) && <div style={{ flexBasis: '100%' }}>
+      <RunEditor run={slot.run || null} note={slot.note} title={title} onChange={run => onChange({ run })} />
+    </div>}
   </div>
 }
 
-/** The trainer's library (not archived) first, then built-in exercises matching the search. */
+/** Where a name matches a search: the whole name, its start, a word's start, anywhere. Upstream's
+ *  search matches anywhere, so "run" listed thirty crunches before the run. */
+export function matchRank(name, query) {
+  const n = String(name || '').toLowerCase()
+  return n === query ? 0 : n.startsWith(query) ? 1 : (' ' + n.replace(/[^\p{L}\p{N}]+/gu, ' ')).includes(' ' + query) ? 2 : 3
+}
+const ranked = (list, query, nameOf) => list.map((e, i) => [matchRank(nameOf(e), query), i, e]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2])
+
+/** The trainer's library (not archived) first, then built-in exercises matching the search, the
+ *  closest matches first. */
 function Picker({ lib, onPick, onClose }) {
   const [q, setQ] = useState('')
   const query = q.trim().toLowerCase()
-  const mine = lib.exercises.filter(e => !e.archived && (!query || e.n.toLowerCase().includes(query)))
-  const builtins = query ? searchExercises(CATALOGUE, q).slice(0, 30) : []
+  const mine = ranked(lib.exercises.filter(e => !e.archived && (!query || e.n.toLowerCase().includes(query))), query, e => e.n)
+  const builtins = query ? ranked(searchExercises(CATALOGUE, q), query, exerciseNameFor).slice(0, 30) : []
   const item = (e, sub) => <button key={e.id} type="button" className="lrow tap" onClick={() => onPick(e)}>
     <span className="lrow-m"><span className="lrow-t">{sub ? exerciseNameFor(e) : e.n}</span><span className="lrow-s">{vocabText(e.bp)}</span></span>
   </button>

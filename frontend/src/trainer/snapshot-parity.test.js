@@ -40,6 +40,11 @@ function library() {
           { id: TR(1), name: 'Lower', emoji: 'dumbbell', ex: [{ id: TX(1), sets: 3, reps: 8, weight: 20, note: 'Slow down' }, { id: '0043', catalog: 'og1', sets: 3, reps: 5, repsMin: 3, weight: 100, restSec: 180, warmupSets: 2 }] },
           { id: TR(2), name: 'Core', ex: [{ id: TX(2), sets: 3, sec: 30, mode: 'time', side: true }, { id: TX(3), sets: 2, reps: 10, bodyweight: true }, { id: TX(1), sets: 1, reps: 20, sg: 'a' }] },
           { id: TR(3), name: 'Empty', ex: [] },
+          // FIT-009: runs planned in steps, with and without instructions of the trainer's own.
+          { id: TR(4), name: 'Run', ex: [
+            { id: '0685', catalog: 'og1', sets: 1, min: 40, note: 'Flat route', run: { steps: [{ kind: 'warmup', km: 2, target: { zone: 2 } }, { kind: 'repeat', times: 5, work: { km: 1, target: { pace: 270, paceTo: 285 } }, rest: { sec: 90, how: 'jog' } }, { kind: 'cooldown', km: 1 }] } },
+            { id: TX(2), sets: 1, run: { steps: [{ kind: 'easy', sec: 1800, target: { kmh: 10.5 } }] } },
+          ] },
         ],
         week: { 1: [TR(1)], 4: [TR(2), TR(3)] },
       },

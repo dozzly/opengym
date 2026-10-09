@@ -63,6 +63,12 @@ describe('the same gate on both sides', () => {
       [p([r([])], { week: { 8: [R1] } })], [p([r([])], { week: { 1: [R2] } })], [p([r([])], { unit: 'st' })], [p([r([])], { name: '' })],
       [p([r([], { emoji: 'a b' })])], [p(Array(15).fill(0).map((_, i) => r([], { id: 'tr_' + String(i).padStart(16, '0') })))],
       [p([r(Array(41).fill({ id: TX1 }))])], [p('x')], [null],
+      // FIT-009: a run on a slot, kept, refused where it is wrong, or refused as too long with the note.
+      [p([r([{ id: '0685', sets: 1, min: 40, note: 'Flat', run: { steps: [{ kind: 'warmup', km: 2.004, target: { zone: 2 }, _u: 'km' }, { kind: 'repeat', times: 5, work: { km: 1, target: { pace: 270, paceTo: 285 } }, rest: { sec: 90, how: 'jog' } }] } }])])],
+      [p([r([{ id: TX1, run: { steps: [{ kind: 'easy', sec: 600, target: { kmh: 9.95 } }] } }])])],
+      [p([r([{ id: '0685', run: { steps: [{ kind: 'easy', km: 1, target: { zone: 9 } }] } }])])],
+      [p([r([{ id: '0685', run: { steps: [{ kind: 'repeat', times: 5, work: { km: 1 }, rest: { how: 'jog' } }] } }])])],
+      [p([r([{ id: '0685', run: 'fast' }])])], [p([r([{ id: '0685', note: 'x'.repeat(480), run: { steps: [{ kind: 'easy', km: 5 }] } }])])],
     ]
     for (const [c, opts = {}] of cases) {
       expect(outcome(() => app.cleanProgrammeInput(c, { exercises, ...opts })), JSON.stringify(c)?.slice(0, 100)).toEqual(outcome(() => server.cleanProgrammeInput(c, { exercises, ...opts })))

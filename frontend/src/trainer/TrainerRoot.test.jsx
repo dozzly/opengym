@@ -11,14 +11,17 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../lib/api.js', () => ({ api: vi.fn(), apiUpload: vi.fn(), apiBlob: vi.fn(), setRemoteAuth: vi.fn() }))
+// The proxy-session keeper the inbox mounts asks the network itself (edgeSession.test.jsx covers it).
+vi.mock('./EdgeSessionKeeper.jsx', () => ({ default: () => null }))
 vi.mock('../lib/media-ingest.js', () => ({ ingestMediaFile: vi.fn() }))
 
 import { api, apiUpload, apiBlob } from '../lib/api.js'
 import { ingestMediaFile } from '../lib/media-ingest.js'
 import { DEF, useStore } from '../store/useStore.js'
 import { TrainerRoot, TrainerInbox } from './index.js'
+import { matchRank } from './ProgrammeEditor.jsx'
 import { fetchTrainerStatus, forgetTrainerStatus, OFF } from './status.js'
-import { TEXT } from './strings.js'
+import { TEXT, RUN_TEXT } from './strings.js'
 import { harness } from '../../../api/trainer/test/inproc.mjs'
 import { exerciseBody, jpeg, mp4, sha, videoRef } from '../../../api/trainer/test/samples.mjs'
 
@@ -91,6 +94,14 @@ async function type(el, value) {
   })
 }
 const text = () => host.textContent
+async function choose(el, value) {
+  expect(el, 'select to choose in').toBeTruthy()
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(el, value)
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+const labelled = label => host.querySelector(`[aria-label="${label}"]`)
 // The trainer-tools switch (the page also has the client's body-weight switch, FIT-004).
 const enableSwitch = () => host.querySelector(`[role="switch"][aria-label="${TEXT.enable}"]`)
 
@@ -127,7 +138,7 @@ describe('the trainer page', () => {
     connect(ANNA.id)
     await mount(ANNA, '/trainer')
     expect(host.querySelector('.trainer-root')).toBeTruthy()
-    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.3.2')
+    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.4.0')
     expect(api.mock.calls.filter(c => c[0] === '/api/trainer/status')).toHaveLength(1)
   })
 
@@ -301,6 +312,58 @@ describe('trainer tools', () => {
     expect(text()).toContain('Block 1')
   })
 
+  it('plans a run in steps on a cardio slot: minutes instead of reps, the steps, and what the client will read (FIT-009)', async () => {
+    const s = connect(ANNA.id)
+    await s.on(ANNA.id)
+    await mount(ANNA)
+    await click(button(TEXT.newProgramme))
+    await type(host.querySelector('#trainer-prog-name'), 'Run block')
+    await click(button(TEXT.addExercise))
+    await type(host.querySelector('.searchf input'), 'run')
+    await click(buttons().find(b => b.querySelector('.lrow-t')?.textContent.toLowerCase() === 'run'))
+    const slot = () => host.querySelector('[data-slot="0685"]')
+    expect(slot().textContent).toContain(TEXT.minutes)
+    expect(slot().textContent).not.toContain(TEXT.reps)
+    await type(slot().querySelector('input[type="number"][min="0.5"]'), '45')
+    await type(host.querySelector(`textarea[aria-label="${TEXT.slotInstructionsFor('run')}"]`), 'Flat route')
+    // Warm-up 1 km, easy 5 km, cool-down 1 km to start with.
+    await click(button(RUN_TEXT.add))
+    expect(host.querySelectorAll('[data-run-step]').length).toBe(3)
+    const step2 = RUN_TEXT.step(2)
+    await choose(labelled(step2), 'tempo')
+    await type(labelled(RUN_TEXT.amountFor(step2)), '3')
+    await choose(labelled(RUN_TEXT.targetFor(step2)), 'range')
+    await type(labelled(RUN_TEXT.paceFor(RUN_TEXT.targetFor(step2))), '4:2')
+    expect(host.querySelector('[data-testid="run-preview"]')).toBeNull()
+    expect(text()).toContain(RUN_TEXT.incomplete)
+    await type(labelled(RUN_TEXT.paceFor(RUN_TEXT.targetFor(step2))), '4:20')
+    await type(labelled(RUN_TEXT.paceToFor(RUN_TEXT.targetFor(step2))), '4:40')
+    // Repeats: 5 × 1 km with 90 s jog to start with; these are 6 × 400 m in zone 4, walking between.
+    await click(button(RUN_TEXT.addRepeat))
+    const step4 = RUN_TEXT.step(4)
+    await type(labelled(RUN_TEXT.timesFor(step4)), '6')
+    await choose(labelled(RUN_TEXT.unitFor(RUN_TEXT.workFor(step4))), 'm')
+    expect(labelled(RUN_TEXT.workFor(step4)).value).toBe('1000')
+    await type(labelled(RUN_TEXT.workFor(step4)), '400')
+    await choose(labelled(RUN_TEXT.targetFor(step4)), 'zone')
+    await choose(labelled(RUN_TEXT.zoneFor(RUN_TEXT.targetFor(step4))), '4')
+    await choose(labelled(RUN_TEXT.recoveryFor(step4)), 'walk')
+    // The cool-down goes last again.
+    await click(labelled(RUN_TEXT.moveUpFor(step4)))
+    const preview = 'Total: 7.4 km + 9 min\n1. Warm-up 1 km\n2. Tempo 3 km at 4:20–4:40/km\n3. 6 × 400 m in heart-rate zone 4, 90 s walk between\n4. Cool-down 1 km\n\nFlat route'
+    expect(host.querySelector('[data-testid="run-preview"]').textContent).toBe(preview)
+    expect(text()).toContain(RUN_TEXT.chars(preview.length, 500))
+    await click(button(TEXT.create))
+    expect(where).toBe('/trainer')
+    const [p] = s.internals.library.read(ANNA.id).programmes
+    expect(p.routines[0].ex[0]).toEqual({ id: '0685', catalog: 'og1', sets: 1, min: 45, note: 'Flat route', run: { steps: [
+      { kind: 'warmup', km: 1 },
+      { kind: 'tempo', km: 3, target: { pace: 260, paceTo: 280 } },
+      { kind: 'repeat', times: 6, work: { km: 0.4, target: { zone: 4 } }, rest: { sec: 90, how: 'walk' } },
+      { kind: 'cooldown', km: 1 },
+    ] } })
+  })
+
   it('an unknown built-in id is shown as unknown and kept when the programme is saved', async () => {
     const s = connect(ANNA.id)
     await s.on(ANNA.id)
@@ -340,5 +403,12 @@ describe('demo usage line', () => {
     expect(sizeText(1048576)).toBe('1 MB')
     expect(sizeText(500 * 1048576)).toBe('500 MB')
     expect(sizeText(1.26 * 1048576)).toBe('1.3 MB')
+  })
+})
+
+describe('the exercise picker\'s order', () => {
+  it('the whole name first, then its start, then a word\'s start, then anywhere: "run" before "crunch"', () => {
+    expect(['crunch floor', 'push to run', 'running man', 'run'].map(n => matchRank(n, 'run'))).toEqual([3, 2, 1, 0])
+    expect(matchRank('cable (with rope) run', 'run')).toBe(2)
   })
 })

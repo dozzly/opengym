@@ -76,6 +76,7 @@ export const TEXT = {
   sets: 'Sets',
   reps: 'Reps',
   seconds: 'Seconds',
+  minutes: 'Minutes',
   slotInstructionsFor: name => `Instructions for ${name}`,
   slotInstructionsHint: 'Instructions your client sees during the workout: paces, grades, rest, cues',
   search: 'Search exercises',
@@ -102,6 +103,9 @@ export const TEXT = {
     slot: 'Check the sets and reps: sets 1 to 20, reps 1 to 999.',
     'archived-exercise': 'An archived exercise cannot be added to a programme. Restore it first.',
     'unknown-exercise': 'That exercise is no longer in your library.',
+    'too-long': 'The run and its instructions are over 500 characters together. Use fewer steps or shorter instructions.',
+    note: 'Instructions can be at most 500 characters.',
+    run: 'Check the run: each step needs a distance or a time, and its pace, speed or heart-rate zone must be in range.',
     other: 'Something in this form is not valid.',
   },
   demoError: {
@@ -245,6 +249,8 @@ export function invalidText(e) {
   if (!e) return T.other
   if (T[e.code]) return T[e.code]
   const field = String(e.field || '')
+  if (/^routines\.\d+\.ex\.\d+\.run/.test(field)) return T.run
+  if (/^routines\.\d+\.ex\.\d+\.note$/.test(field)) return T.note
   if (/^routines\.\d+\.ex\.\d+/.test(field)) return T.slot
   if (/^routines/.test(field)) return T.routines
   return T[field] || T.other
@@ -266,4 +272,40 @@ export const HOME_TEXT = {
 export const EDGE_TEXT = {
   stale: 'Your sign-in needs a refresh to keep syncing. Your workout is kept.',
   reconnect: 'Reconnect',
+}
+
+// A cardio slot's run as steps (RunEditor.jsx, FIT-009). What the client reads is run.js's.
+export const RUN_TEXT = {
+  add: 'Plan the run in steps',
+  groupFor: name => `Run steps for ${name}`,
+  hint: 'Each step is a distance or a time, with a pace, speed or heart-rate zone if you want one.',
+  step: n => `Step ${n}`,
+  kinds: { warmup: 'Warm-up', easy: 'Easy', steady: 'Steady', tempo: 'Tempo', fast: 'Fast', recovery: 'Recovery', cooldown: 'Cool-down', repeat: 'Repeats' },
+  units: { km: 'km', m: 'm', min: 'min', s: 's' },
+  amountFor: step => `${step}: distance or time`,
+  unitFor: what => `${what}: unit`,
+  timesFor: step => `${step}: how many times`,
+  workFor: step => `${step}: each repeat`,
+  targetFor: step => `${step}: target`,
+  targets: { none: 'No target', pace: 'Pace', range: 'Pace range', speed: 'Speed', zone: 'Heart-rate zone' },
+  paceFor: what => `${what}: pace, minutes:seconds per km`,
+  paceToFor: what => `${what}: slowest pace, minutes:seconds per km`,
+  perKm: 'per km',
+  speedFor: what => `${what}: speed in km/h`,
+  zoneFor: what => `${what}: zone`,
+  zone: z => `Zone ${z}`,
+  recoveryFor: step => `${step}: recovery`,
+  recoveryAmountFor: step => `${step}: recovery distance or time`,
+  noRecovery: 'No recovery',
+  rest: { jog: 'Jog', walk: 'Walk', rest: 'Rest' },
+  between: 'between',
+  moveUpFor: step => `Move ${step.toLowerCase()} up`,
+  removeFor: step => `Remove ${step.toLowerCase()}`,
+  remove: 'Remove',
+  addStep: 'Add a step',
+  addRepeat: 'Add repeats',
+  removeAll: 'Remove the steps',
+  preview: 'What your client reads',
+  incomplete: 'Give every step a distance or a time, and finish its target, to see what your client reads.',
+  chars: (n, max) => `${n} of ${max} characters, with your instructions`,
 }

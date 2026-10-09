@@ -8,8 +8,10 @@
 //
 //   exercise  { id: tx_…, rev, n, bp, eq, desc, primaries, secondaries, url?, media?, archived, … }
 //   programme { id: tp_…, rev, name, unit, routines: [{ id: tr_…, name, emoji?, ex: [slot] }], week, … }
-//   slot      { id: tx_…, sets?, reps?, … }  or  { id: <built-in id>, catalog: 'og1', sets?, … }
+//   slot      { id: tx_…, sets?, reps?, … }  or  { id: <built-in id>, catalog: 'og1', sets?, … },
+//             either with `note` (instructions) and `run` (a structured run, run.js)
 import { normalizeMediaRef, CATALOGUE } from './adapter.js'
+import { RunError, cleanRun, deliveredNote } from './run.js'
 
 export const LIMITS = Object.freeze({
   exercises: 500, programmes: 100, routines: 14, slots: 40, perDay: 6,
@@ -211,6 +213,12 @@ function cleanSlot(raw, field, exercises, allowArchived) {
   }
   const note = text(raw.note, `${field}.note`, LIMITS.note, { multiline: true })
   if (note) out.note = note
+  if (raw.run != null) {
+    let run
+    try { run = cleanRun(raw.run, `${field}.run`) } catch (e) { if (e instanceof RunError) bad(e.field); throw e }
+    if (deliveredNote(run, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.run`, { max: LIMITS.note })
+    out.run = run
+  }
   return out
 }
 

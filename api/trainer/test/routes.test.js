@@ -58,7 +58,7 @@ test('GET /api/trainer/status: 401 without a session, the module version with on
   const h = harness(t);
   assert.deepEqual(await h.call('GET', '/api/trainer/status'), { status: 401, body: { error: 'not signed in' }, headers: {} });
   assert.deepEqual((await h.call('GET', '/api/trainer/status', { uid: ANNA })).body, { enabled: true, module: MODULE_VERSION });
-  assert.equal(MODULE_VERSION, '0.3.2');
+  assert.equal(MODULE_VERSION, '0.4.0');
 });
 
 test('capability: `restricted` says whether TRAINER_ALLOW names who may be a trainer', async t => {

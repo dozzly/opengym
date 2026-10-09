@@ -23,6 +23,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../lib/api.js', () => ({ api: vi.fn(), apiUpload: vi.fn(), apiBlob: vi.fn(), setRemoteAuth: vi.fn() }))
+// The proxy-session keeper the inbox mounts asks the network itself (edgeSession.test.jsx covers it).
+vi.mock('./EdgeSessionKeeper.jsx', () => ({ default: () => null }))
 
 import { api, apiUpload, apiBlob } from '../lib/api.js'
 import { DEF, useStore } from '../store/useStore.js'

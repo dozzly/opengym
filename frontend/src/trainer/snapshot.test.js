@@ -244,6 +244,16 @@ describe('applySnapshot', () => {
     expect(routine(S, R1).ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100, note: '5 × 1 km at tempo, 90 s jog between' })
   })
 
+  it('a run planned in steps reaches the client as text ahead of the instructions; the steps stay in the library (FIT-009)', () => {
+    const lib = library()
+    lib.programmes[0].routines[0].ex[1] = { id: '0685', catalog: 'og1', sets: 1, min: 40, note: 'Flat route',
+      run: { steps: [{ kind: 'warmup', km: 2, target: { zone: 2 } }, { kind: 'repeat', times: 5, work: { km: 1, target: { pace: 270 } }, rest: { sec: 90, how: 'jog' } }] } }
+    const S = client()
+    applySnapshot(S, snapshotProgramme(lib, TP1))
+    expect(routine(S, R1).ex[1]).toEqual({ id: '0685', sets: 1, min: 40,
+      note: 'Total: 7 km + 7:30 min\n1. Warm-up 2 km in heart-rate zone 2\n2. 5 × 1 km at 4:30/km, 90 s jog between\n\nFlat route' })
+  })
+
   it('a routine this trainer delivered before (same id, the trainer\'s marker) is replaced in place, on a new link or after an Undo', () => {
     const S = client()
     applySnapshot(S, snapshotProgramme(library(), TP1, { assignmentId: 'lk_old', rev: 3 }))

@@ -9,7 +9,8 @@
  *               archived, createdAt, updatedAt }
  *   routine   { id: tr_<16 hex>, name, emoji?, ex: [slot] }       (upstream's routine shape)
  *   slot      { id: tx_…, sets?, reps?, … }                         a library exercise, or
- *             { id: <built-in id>, catalog: 'og1', sets?, … }       an upstream built-in one
+ *             { id: <built-in id>, catalog: 'og1', sets?, … }       an upstream built-in one;
+ *             either may carry `note` (instructions) and `run` (a structured run, run.js)
  *
  * An exercise's content is upstream's custom-exercise shape as far as it applies (name `n`, body
  * part `bp`, equipment `eq`, instructions `desc`, muscles, link `url`, and a MediaRef `media`), so
@@ -22,6 +23,7 @@
 import crypto from 'node:crypto';
 import { HASH_RE, MEDIA_TYPES } from '../media.js';
 import { inOg1 } from './catalog-og1.js';
+import { RunError, cleanRun, deliveredNote } from './run.js';
 
 export const LIBRARY_FORMAT = 1;
 export const EXPORT_FORMAT = 1;
@@ -279,6 +281,14 @@ function cleanSlot(raw, field, exercises, allowArchived) {
   }
   const note = text(raw.note, `${field}.note`, LIMITS.note, { multiline: true });
   if (note) out.note = note;
+  // A structured run (FIT-009, run.js). The client gets its text and the note in one note, which
+  // has to fit upstream's NOTE_MAX.
+  if (raw.run != null) {
+    let run;
+    try { run = cleanRun(raw.run, `${field}.run`); } catch (e) { if (e instanceof RunError) bad(e.field); throw e; }
+    if (deliveredNote(run, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.run`, { max: LIMITS.note });
+    out.run = run;
+  }
   return out;
 }
 
