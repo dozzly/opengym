@@ -123,6 +123,15 @@ test('a cardio slot may carry a run planned in steps (FIT-009); run and instruct
   assert.throws(() => one({ id: '0685', note: 'x'.repeat(450), run }), refusal('too-long', 'routines.0.ex.0.run'));
 });
 
+test('a slot may carry a climbing session (FIT-010), not with a run; with the instructions it must fit in one note', () => {
+  const climb = { scale: 'V', steps: [{ kind: 'warmup', sec: 900, grade: { from: 'V0', to: 'V1' } }, { kind: 'project', grade: { from: 'V5' }, tries: 3 }] };
+  const one = slot => cleanProgrammeInput({ name: 'P', routines: [routine({ ex: [slot] })] }, { exercises: library });
+  assert.deepEqual(one({ id: TX1, sets: 1, min: 90, note: 'Chalk up', climb: { ...climb, junk: 1 } }).routines[0].ex[0], { id: TX1, sets: 1, min: 90, note: 'Chalk up', climb });
+  assert.throws(() => one({ id: TX1, climb: { scale: 'V', steps: [{ kind: 'project' }] } }), refusal('invalid', 'routines.0.ex.0.climb.steps.0.grade'));
+  assert.throws(() => one({ id: TX1, run: { steps: [{ kind: 'easy', km: 5 }] }, climb }), refusal('invalid', 'routines.0.ex.0.climb'));
+  assert.throws(() => one({ id: TX1, note: 'x'.repeat(460), climb }), refusal('too-long', 'routines.0.ex.0.climb'));
+});
+
 test('a programme is refused on a bad slot value, a bad week or too many of anything', () => {
   const tryWith = over => () => cleanProgrammeInput({ name: 'P', routines: [routine()], ...over }, { exercises: library });
   const slot = s => ({ routines: [routine({ ex: [{ id: TX1, ...s }] })] });

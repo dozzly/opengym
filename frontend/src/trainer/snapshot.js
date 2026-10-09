@@ -39,6 +39,7 @@
 import { parsePlan, deleteRoutine, ASSIGNED } from './adapter.js'
 import { EX_ID_RE, resolveBuiltin, byId, CATALOGS } from './library.js'
 import { deliveredNote } from './run.js'
+import { climbNote } from './climb.js'
 
 export const SNAPSHOT_FORMAT = 1
 
@@ -79,9 +80,11 @@ export function snapshotProgramme(library, programmeId, { trainer = library?.own
   const routines = p.routines.map(r => {
     const ex = []
     r.ex.forEach((slot, index) => {
-      const { id, catalog, run, ...cfg } = slot
-      // A structured run (FIT-009) goes out as text, in the note, ahead of the trainer's own.
+      const { id, catalog, run, climb, ...cfg } = slot
+      // A run (FIT-009) or a climbing session (FIT-010) goes out as text, in the note, ahead of the
+      // trainer's own.
       if (run) cfg.note = deliveredNote(run, cfg.note)
+      else if (climb) cfg.note = climbNote(climb, cfg.note)
       if (EX_ID_RE.test(id)) {
         const lib = exercises.get(id)
         if (!lib) { unresolved.push({ routine: r.id, index, id, catalog: null }); return }

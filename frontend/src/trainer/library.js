@@ -9,9 +9,10 @@
 //   exercise  { id: tx_…, rev, n, bp, eq, desc, primaries, secondaries, url?, media?, archived, … }
 //   programme { id: tp_…, rev, name, unit, routines: [{ id: tr_…, name, emoji?, ex: [slot] }], week, … }
 //   slot      { id: tx_…, sets?, reps?, … }  or  { id: <built-in id>, catalog: 'og1', sets?, … },
-//             either with `note` (instructions) and `run` (a structured run, run.js)
+//             either with `note` (instructions), and `run` (run.js) or `climb` (climb.js)
 import { normalizeMediaRef, CATALOGUE } from './adapter.js'
 import { RunError, cleanRun, deliveredNote } from './run.js'
+import { ClimbError, cleanClimb, climbNote } from './climb.js'
 
 export const LIMITS = Object.freeze({
   exercises: 500, programmes: 100, routines: 14, slots: 40, perDay: 6,
@@ -218,6 +219,13 @@ function cleanSlot(raw, field, exercises, allowArchived) {
     try { run = cleanRun(raw.run, `${field}.run`) } catch (e) { if (e instanceof RunError) bad(e.field); throw e }
     if (deliveredNote(run, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.run`, { max: LIMITS.note })
     out.run = run
+  }
+  if (raw.climb != null) {
+    if (out.run) bad(`${field}.climb`)
+    let climb
+    try { climb = cleanClimb(raw.climb, `${field}.climb`) } catch (e) { if (e instanceof ClimbError) bad(e.field); throw e }
+    if (climbNote(climb, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.climb`, { max: LIMITS.note })
+    out.climb = climb
   }
   return out
 }

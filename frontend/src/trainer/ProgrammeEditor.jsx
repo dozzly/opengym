@@ -13,6 +13,7 @@ import { LIMITS, LibraryError, byId, cleanProgrammeInput, newRoutineId, programm
 import { writeErrorText } from './useTrainer.js'
 import Page, { Note } from './Page.jsx'
 import RunEditor from './RunEditor.jsx'
+import ClimbEditor from './ClimbEditor.jsx'
 import { TEXT, invalidText } from './strings.js'
 
 const clone = v => JSON.parse(JSON.stringify(v))
@@ -77,7 +78,7 @@ export default function ProgrammeEditor({ lib, write }) {
         onChange={patch => change(d => { Object.assign(d.routines[ri].ex[si], patch); for (const k of Object.keys(patch)) if (patch[k] == null) delete d.routines[ri].ex[si][k] })}
         onRemove={() => change(d => { d.routines[ri].ex.splice(si, 1) })} />)}
       {picking === ri
-        ? <Picker lib={lib} onPick={ex => { change(d => { d.routines[ri].ex.push(slotFor(ex, isCardio(ex) ? CARDIO_SLOT : undefined)) }); setPicking(null) }} onClose={() => setPicking(null)} />
+        ? <Picker lib={lib} onPick={ex => { change(d => { d.routines[ri].ex.push(slotFor(ex, isCardio(ex) ? (isClimbing(ex) ? CLIMB_SLOT : CARDIO_SLOT) : undefined)) }); setPicking(null) }} onClose={() => setPicking(null)} />
         : r.ex.length < LIMITS.slots && <Row icon="plusCircle" title={TEXT.addExercise} onClick={() => setPicking(ri)} />}
       {draft.routines.length > 1 && <Row icon="trash" danger title={TEXT.removeRoutine} onClick={() => removeRoutine(ri)} />}
     </Section>)}
@@ -100,17 +101,25 @@ const num = v => (v === '' ? null : Number(v))
 // speed: 8 }); the speed is the client's to log, so a programme leaves it out.
 const isCardio = ex => ex?.bp === 'cardio'
 const CARDIO_SLOT = Object.freeze({ sets: 1, min: 20 })
+// The built-in catalogue has no climbing, so a trainer adds an exercise to the library
+// ("Bouldering", body part cardio so the client logs its time): a library exercise whose name says
+// climbing gets a climbing session (FIT-010) instead of a run.
+const CLIMB_NAME = /boulder|climb|klettern|escalade|\bbloc|arrampica/i
+const isClimbing = ex => !!ex && !/^\d+$/.test(ex.id) && CLIMB_NAME.test(ex.n || '')
+const CLIMB_SLOT = Object.freeze({ sets: 1, min: 90 })
 
 /** One exercise slot: what it names (unknown ones say so and stay), sets and reps, seconds or (for
  *  cardio) minutes, and the trainer's instructions for it. Those travel with the plan as the slot's
  *  `note`, which upstream shows on the workout screen under the exercise ("the plan's
  *  instruction"): a run's paces, a bouldering session's grades and rest, a lift's cues. A cardio
- *  slot can also carry a run planned in steps (RunEditor.jsx), delivered as text ahead of them. */
+ *  slot can also carry a run planned in steps (RunEditor.jsx), and a climbing one a climbing
+ *  session (ClimbEditor.jsx), delivered as text ahead of them. */
 function SlotRow({ slot, what, onChange, onRemove }) {
   const title = what.kind === 'library' ? what.ex.n + (what.ex.archived ? ` (${TEXT.archivedTag})` : '')
     : what.kind === 'builtin' ? exerciseNameFor(what.ex) : TEXT.unknownExercise(what.id)
   const timed = slot.mode === 'time'
   const cardio = isCardio(what.ex)
+  const climbing = isClimbing(what.ex) || !!slot.climb
   return <div className="lrow" data-slot={slot.id} style={{ flexWrap: 'wrap', gap: 8 }}>
     <span className="lrow-m">
       <span className={'lrow-t' + (what.kind === 'builtin' ? ' capitalize' : '')}>{title}</span>
@@ -135,9 +144,13 @@ function SlotRow({ slot, what, onChange, onRemove }) {
       <TextArea aria-label={TEXT.slotInstructionsFor(title)} placeholder={TEXT.slotInstructionsHint} rows={2}
         maxLength={LIMITS.note} value={slot.note || ''} onChange={e => onChange({ note: e.target.value })} />
     </div>
-    {(cardio || slot.run) && <div style={{ flexBasis: '100%' }}>
-      <RunEditor run={slot.run || null} note={slot.note} title={title} onChange={run => onChange({ run })} />
-    </div>}
+    {climbing && !slot.run
+      ? <div style={{ flexBasis: '100%' }}>
+        <ClimbEditor climb={slot.climb || null} note={slot.note} title={title} onChange={climb => onChange({ climb })} />
+      </div>
+      : (cardio || slot.run) && <div style={{ flexBasis: '100%' }}>
+        <RunEditor run={slot.run || null} note={slot.note} title={title} onChange={run => onChange({ run })} />
+      </div>}
   </div>
 }
 

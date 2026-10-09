@@ -12,8 +12,9 @@
  *   A slot naming a library exercise keeps its tx_ id; one naming a built-in exercise keeps the
  *   catalogue it was taken from (`catalog: 'og1'`), so the client's app resolves it against the
  *   catalogue it runs and never reads an old id as a new one (library.js resolveBuiltin).
- * - A slot's structured run (FIT-009) is delivered as text: run.js deliveredNote() puts it in the
- *   slot's `note`, before the trainer's own instructions, and the steps stay in the library.
+ * - A slot's run (FIT-009) or climbing session (FIT-010) is delivered as text: run.js deliveredNote()
+ *   or climb.js climbNote() puts it in the slot's `note`, before the trainer's own instructions, and
+ *   the steps stay in the library.
  * - `customEx` holds every library exercise the routines use, archived ones included, as a full
  *   custom exercise under its stable tx_ id: `custom: true`, its MediaRef, `src: { trainer, exRev }`.
  * - `unresolved` lists slots that cannot be delivered ({ routine, index, id, catalog }): a library
@@ -23,6 +24,7 @@
  */
 import { EX_ID_RE, resolveBuiltin } from './library.js';
 import { deliveredNote } from './run.js';
+import { climbNote } from './climb.js';
 
 export const SNAPSHOT_FORMAT = 1;
 
@@ -54,8 +56,9 @@ export function snapshotProgramme(library, programmeId, { trainer = library?.own
   const routines = p.routines.map(r => {
     const ex = [];
     r.ex.forEach((slot, index) => {
-      const { id, catalog, run, ...cfg } = slot;
+      const { id, catalog, run, climb, ...cfg } = slot;
       if (run) cfg.note = deliveredNote(run, cfg.note);
+      else if (climb) cfg.note = climbNote(climb, cfg.note);
       if (EX_ID_RE.test(id)) {
         const lib = exercises.get(id);
         if (!lib) { unresolved.push({ routine: r.id, index, id, catalog: null }); return; }

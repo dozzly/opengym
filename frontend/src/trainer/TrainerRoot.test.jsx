@@ -21,7 +21,7 @@ import { DEF, useStore } from '../store/useStore.js'
 import { TrainerRoot, TrainerInbox } from './index.js'
 import { matchRank } from './ProgrammeEditor.jsx'
 import { fetchTrainerStatus, forgetTrainerStatus, OFF } from './status.js'
-import { TEXT, RUN_TEXT } from './strings.js'
+import { TEXT, RUN_TEXT, CLIMB_TEXT } from './strings.js'
 import { harness } from '../../../api/trainer/test/inproc.mjs'
 import { exerciseBody, jpeg, mp4, sha, videoRef } from '../../../api/trainer/test/samples.mjs'
 
@@ -138,7 +138,7 @@ describe('the trainer page', () => {
     connect(ANNA.id)
     await mount(ANNA, '/trainer')
     expect(host.querySelector('.trainer-root')).toBeTruthy()
-    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.4.0')
+    expect([...host.querySelectorAll('.trainer-root .lrow-v')].map(e => e.textContent)).toContain('v0.5.0')
     expect(api.mock.calls.filter(c => c[0] === '/api/trainer/status')).toHaveLength(1)
   })
 
@@ -361,6 +361,54 @@ describe('trainer tools', () => {
       { kind: 'tempo', km: 3, target: { pace: 260, paceTo: 280 } },
       { kind: 'repeat', times: 6, work: { km: 0.4, target: { zone: 4 } }, rest: { sec: 90, how: 'walk' } },
       { kind: 'cooldown', km: 1 },
+    ] } })
+  })
+
+  it('plans a climbing session in steps on a library "Bouldering", on either grade scale (FIT-010)', async () => {
+    const s = connect(ANNA.id)
+    await s.on(ANNA.id)
+    const ex = (await s.call('POST', '/api/trainer/library/exercises', { uid: ANNA.id, body: { baseRev: 0, exercise: exerciseBody({ n: 'Bouldering', bp: 'cardio' }) } })).body.exercise
+    await mount(ANNA)
+    await click(button(TEXT.newProgramme))
+    await type(host.querySelector('#trainer-prog-name'), 'Wall block')
+    await click(button(TEXT.addExercise))
+    await click(button('Bouldering'))
+    const slot = () => host.querySelector(`[data-slot="${ex.id}"]`)
+    expect(slot().querySelector('input[type="number"][min="0.5"]').value).toBe('90')
+    expect(text()).not.toContain(RUN_TEXT.add)
+    await type(host.querySelector(`textarea[aria-label="${TEXT.slotInstructionsFor('Bouldering')}"]`), 'Chalk up')
+    // Warm-up, 4 × 4 and a cool-down to start with, in V.
+    await click(button(CLIMB_TEXT.add))
+    expect(host.querySelectorAll('[data-climb-step]').length).toBe(3)
+    // Font instead: the grades already set are converted.
+    await click(buttons().find(b => b.textContent === 'Font'))
+    expect(labelled(CLIMB_TEXT.gradeFor(CLIMB_TEXT.step(2))).value).toBe('5+')
+    expect(labelled(CLIMB_TEXT.toFor(CLIMB_TEXT.gradeFor(CLIMB_TEXT.step(2)))).value).toBe('6A+')
+    // A projecting step: 3 tries each on 6C, 3 min rest.
+    await click(button(CLIMB_TEXT.addStep))
+    const step4 = CLIMB_TEXT.step(4)
+    await choose(labelled(step4), 'project')
+    await choose(labelled(CLIMB_TEXT.gradeFor(step4)), '6C')
+    await type(labelled(CLIMB_TEXT.triesFor(step4)), '3')
+    await type(labelled(CLIMB_TEXT.restFor(step4)), '3')
+    await type(labelled(CLIMB_TEXT.textFor(step4)), 'crimps')
+    await click(labelled(CLIMB_TEXT.moveUpFor(step4)))
+    const preview = [
+      '1. Warm-up 15 min on Font 4–5 (V0–V1)',
+      '2. 4 × 4 problems at Font 5+–6A+ (V2–V3), 4 min rest between rounds',
+      '3. Project Font 6C (V5), 3 tries per problem, 3 min rest between tries: crimps',
+      '4. Cool-down 10 min',
+      '', 'Chalk up',
+    ].join('\n')
+    expect(host.querySelector('[data-testid="climb-preview"]').textContent).toBe(preview)
+    await click(button(TEXT.create))
+    expect(where).toBe('/trainer')
+    const [p] = s.internals.library.read(ANNA.id).programmes
+    expect(p.routines[0].ex[0]).toEqual({ id: ex.id, sets: 1, min: 90, note: 'Chalk up', climb: { scale: 'font', steps: [
+      { kind: 'warmup', sec: 900, grade: { from: '4', to: '5' } },
+      { kind: 'circuit', rounds: 4, count: 4, grade: { from: '5+', to: '6A+' }, restSec: 240 },
+      { kind: 'project', grade: { from: '6C' }, tries: 3, restSec: 180, text: 'crimps' },
+      { kind: 'cooldown', sec: 600 },
     ] } })
   })
 

@@ -57,7 +57,7 @@ import { snapshotHashes } from './snapshot.js';
 import { sweepOrphans } from './cleanup.js';
 import { linkRoutes } from './link-routes.js';
 
-export const MODULE_VERSION = '0.4.0';
+export const MODULE_VERSION = '0.5.0';
 
 const ON = /^(1|true|yes|on)$/i;
 export const trainerEnabled = (env = process.env) => ON.test(env.TRAINER || '');

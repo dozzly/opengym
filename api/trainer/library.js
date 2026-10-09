@@ -10,7 +10,8 @@
  *   routine   { id: tr_<16 hex>, name, emoji?, ex: [slot] }       (upstream's routine shape)
  *   slot      { id: tx_…, sets?, reps?, … }                         a library exercise, or
  *             { id: <built-in id>, catalog: 'og1', sets?, … }       an upstream built-in one;
- *             either may carry `note` (instructions) and `run` (a structured run, run.js)
+ *             either may carry `note` (instructions), and `run` (a run, run.js) or `climb` (a
+ *             climbing session, climb.js)
  *
  * An exercise's content is upstream's custom-exercise shape as far as it applies (name `n`, body
  * part `bp`, equipment `eq`, instructions `desc`, muscles, link `url`, and a MediaRef `media`), so
@@ -24,6 +25,7 @@ import crypto from 'node:crypto';
 import { HASH_RE, MEDIA_TYPES } from '../media.js';
 import { inOg1 } from './catalog-og1.js';
 import { RunError, cleanRun, deliveredNote } from './run.js';
+import { ClimbError, cleanClimb, climbNote } from './climb.js';
 
 export const LIBRARY_FORMAT = 1;
 export const EXPORT_FORMAT = 1;
@@ -288,6 +290,14 @@ function cleanSlot(raw, field, exercises, allowArchived) {
     try { run = cleanRun(raw.run, `${field}.run`); } catch (e) { if (e instanceof RunError) bad(e.field); throw e; }
     if (deliveredNote(run, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.run`, { max: LIMITS.note });
     out.run = run;
+  }
+  // A climbing session (FIT-010, climb.js): the same, and a slot has a run or a session, not both.
+  if (raw.climb != null) {
+    if (out.run) bad(`${field}.climb`);
+    let climb;
+    try { climb = cleanClimb(raw.climb, `${field}.climb`); } catch (e) { if (e instanceof ClimbError) bad(e.field); throw e; }
+    if (climbNote(climb, note).length > LIMITS.note) throw new LibraryError('too-long', `${field}.climb`, { max: LIMITS.note });
+    out.climb = climb;
   }
   return out;
 }

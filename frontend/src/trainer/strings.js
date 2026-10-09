@@ -103,9 +103,10 @@ export const TEXT = {
     slot: 'Check the sets and reps: sets 1 to 20, reps 1 to 999.',
     'archived-exercise': 'An archived exercise cannot be added to a programme. Restore it first.',
     'unknown-exercise': 'That exercise is no longer in your library.',
-    'too-long': 'The run and its instructions are over 500 characters together. Use fewer steps or shorter instructions.',
+    'too-long': 'The steps and the instructions are over 500 characters together. Use fewer steps or shorter instructions.',
     note: 'Instructions can be at most 500 characters.',
     run: 'Check the run: each step needs a distance or a time, and its pace, speed or heart-rate zone must be in range.',
+    climb: 'Check the climbing session: each step needs what its kind asks for (minutes, problems, rounds or a grade), and a grade range has to go up.',
     other: 'Something in this form is not valid.',
   },
   demoError: {
@@ -250,6 +251,7 @@ export function invalidText(e) {
   if (T[e.code]) return T[e.code]
   const field = String(e.field || '')
   if (/^routines\.\d+\.ex\.\d+\.run/.test(field)) return T.run
+  if (/^routines\.\d+\.ex\.\d+\.climb/.test(field)) return T.climb
   if (/^routines\.\d+\.ex\.\d+\.note$/.test(field)) return T.note
   if (/^routines\.\d+\.ex\.\d+/.test(field)) return T.slot
   if (/^routines/.test(field)) return T.routines
@@ -307,5 +309,38 @@ export const RUN_TEXT = {
   removeAll: 'Remove the steps',
   preview: 'What your client reads',
   incomplete: 'Give every step a distance or a time, and finish its target, to see what your client reads.',
+  chars: (n, max) => `${n} of ${max} characters, with your instructions`,
+}
+
+// A climbing slot's session as steps (ClimbEditor.jsx, FIT-010). What the client reads is climb.js's.
+export const CLIMB_TEXT = {
+  add: 'Plan the climbing session in steps',
+  groupFor: name => `Climbing session for ${name}`,
+  scale: 'Grades in',
+  hint: 'Your client reads every grade in both scales.',
+  step: n => `Step ${n}`,
+  kinds: { warmup: 'Warm-up', volume: 'Problems', circuit: 'Rounds', project: 'Projecting', board: 'Board', cooldown: 'Cool-down' },
+  minutesFor: step => `${step}: minutes`,
+  countFor: step => `${step}: how many problems`,
+  roundsFor: step => `${step}: how many rounds`,
+  triesFor: step => `${step}: tries per problem`,
+  restFor: step => `${step}: rest in minutes`,
+  gradeFor: step => `${step}: grade`,
+  toFor: what => `${what}: up to`,
+  textFor: step => `${step}: note`,
+  textHint: 'Note (slab, crimps…)',
+  anyGrade: 'Any grade',
+  upTo: 'to',
+  problems: 'problems',
+  min: 'min',
+  tries: 'tries each',
+  restMin: 'min rest',
+  moveUpFor: step => `Move ${step.toLowerCase()} up`,
+  removeFor: step => `Remove ${step.toLowerCase()}`,
+  remove: 'Remove',
+  addStep: 'Add a step',
+  removeAll: 'Remove the steps',
+  preview: 'What your client reads',
+  incomplete: 'Give every step what its kind needs, to see what your client reads.',
   chars: (n, max) => `${n} of ${max} characters, with your instructions`,
 }

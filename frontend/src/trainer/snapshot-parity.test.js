@@ -44,6 +44,8 @@ function library() {
           { id: TR(4), name: 'Run', ex: [
             { id: '0685', catalog: 'og1', sets: 1, min: 40, note: 'Flat route', run: { steps: [{ kind: 'warmup', km: 2, target: { zone: 2 } }, { kind: 'repeat', times: 5, work: { km: 1, target: { pace: 270, paceTo: 285 } }, rest: { sec: 90, how: 'jog' } }, { kind: 'cooldown', km: 1 }] } },
             { id: TX(2), sets: 1, run: { steps: [{ kind: 'easy', sec: 1800, target: { kmh: 10.5 } }] } },
+            // FIT-010: a climbing session.
+            { id: TX(1), sets: 1, min: 90, note: 'Chalk up', climb: { scale: 'V', steps: [{ kind: 'warmup', sec: 900, grade: { from: 'V0', to: 'V1' } }, { kind: 'circuit', rounds: 4, count: 4, grade: { from: 'V2', to: 'V3' }, restSec: 240 }] } },
           ] },
         ],
         week: { 1: [TR(1)], 4: [TR(2), TR(3)] },

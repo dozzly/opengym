@@ -486,6 +486,38 @@ The exercise picker now lists the closest matches first: the whole name, then it
 word's start, then anywhere. Upstream's search matches anywhere, so "run" used to list thirty
 crunches and never the run.
 
+## Climbing sessions planned in steps (0.5.0, FIT-010)
+
+Prescribe only, by the owner's choice: the trainer plans the session, and the client reads it and
+logs the exercise as usual. Nothing is logged per problem. The built-in catalogue has no climbing,
+so the trainer adds an exercise to the library, named for example "Bouldering", with body part
+cardio so that the client logs its time. Any library exercise whose name says climbing
+(`boulder`, `climb`, `klettern`, `escalade`, `bloc`, `arrampica`) gets "Plan the climbing session in
+steps" (`ClimbEditor.jsx`) instead of a run, and starts at 1 × 90 minutes. Up to 10 steps:
+- Warm-up, board and cool-down: minutes.
+- Problems: how many, with rest between problems.
+- Rounds: rounds × problems (4 × 4), with rest between rounds.
+- Projecting: a grade (required), minutes, tries per problem, and rest between tries.
+- Every step except the cool-down may have a boulder grade or a range. Every step may have a
+  short note (60 characters, one line).
+
+The session has one grade scale, V or Font, chosen with a switch in the editor. Switching converts
+the grades already set (`convertGrade`, the usual table: V3 = 6A–6A+, V4 = 6B–6B+, …). The client
+reads every grade in both scales, the session's first and the other in brackets:
+
+    1. Warm-up 15 min on Font 4–5 (V0–V1)
+    2. 4 × 4 problems at Font 5+–6A+ (V2–V3), 4 min rest between rounds
+    3. Project Font 6C (V5), 3 tries per problem, 3 min rest between tries: crimps
+    4. Cool-down 10 min
+
+    Chalk up
+
+It is stored and delivered the way a run is. The library keeps `climb` on the slot (`climb.js`
+`cleanClimb`, mirrored in `api/trainer/climb.js`, pinned by `climb-parity.test.js`). A slot has a
+run or a climbing session, not both. The snapshot carries only the text, in the slot's `note`
+(`climbNote`). The text and the instructions together must fit 500 characters. Route grades (French
+sport, UK) are not covered yet.
+
 ## The proxy session (0.3.2)
 
 Behind an authenticating proxy (Authentik on dozzly), the proxy's session can end while the app

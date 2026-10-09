@@ -69,6 +69,11 @@ describe('the same gate on both sides', () => {
       [p([r([{ id: '0685', run: { steps: [{ kind: 'easy', km: 1, target: { zone: 9 } }] } }])])],
       [p([r([{ id: '0685', run: { steps: [{ kind: 'repeat', times: 5, work: { km: 1 }, rest: { how: 'jog' } }] } }])])],
       [p([r([{ id: '0685', run: 'fast' }])])], [p([r([{ id: '0685', note: 'x'.repeat(480), run: { steps: [{ kind: 'easy', km: 5 }] } }])])],
+      // FIT-010: a climbing session on a slot; not with a run; too long with the note.
+      [p([r([{ id: TX1, sets: 1, min: 90, note: 'Chalk up', climb: { scale: 'font', steps: [{ kind: 'warmup', sec: 900, grade: { from: '4', to: '5' }, _sec: '15' }, { kind: 'project', grade: { from: '6C' }, tries: 3, count: 9 }] } }])])],
+      [p([r([{ id: TX1, climb: { scale: 'V', steps: [{ kind: 'project' }] } }])])],
+      [p([r([{ id: TX1, run: { steps: [{ kind: 'easy', km: 5 }] }, climb: { scale: 'V', steps: [{ kind: 'cooldown', sec: 60 }] } }])])],
+      [p([r([{ id: TX1, note: 'x'.repeat(480), climb: { scale: 'V', steps: [{ kind: 'cooldown', sec: 600 }] } }])])],
     ]
     for (const [c, opts = {}] of cases) {
       expect(outcome(() => app.cleanProgrammeInput(c, { exercises, ...opts })), JSON.stringify(c)?.slice(0, 100)).toEqual(outcome(() => server.cleanProgrammeInput(c, { exercises, ...opts })))

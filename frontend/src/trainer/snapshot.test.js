@@ -244,6 +244,17 @@ describe('applySnapshot', () => {
     expect(routine(S, R1).ex[1]).toEqual({ id: '0043', sets: 3, reps: 5, weight: 100, note: '5 × 1 km at tempo, 90 s jog between' })
   })
 
+  it('a climbing session reaches the client as text, every grade in both scales (FIT-010)', () => {
+    const lib = library()
+    lib.programmes[0].routines[0].ex[0] = { ...lib.programmes[0].routines[0].ex[0], note: 'Chalk up',
+      climb: { scale: 'font', steps: [{ kind: 'circuit', rounds: 4, count: 4, grade: { from: '5+', to: '6A+' }, restSec: 240 }] } }
+    const S = client()
+    applySnapshot(S, snapshotProgramme(lib, TP1))
+    const slot = routine(S, R1).ex[0]
+    expect(slot.climb).toBeUndefined()
+    expect(slot.note).toBe('1. 4 × 4 problems at Font 5+–6A+ (V2–V3), 4 min rest between rounds\n\nChalk up')
+  })
+
   it('a run planned in steps reaches the client as text ahead of the instructions; the steps stay in the library (FIT-009)', () => {
     const lib = library()
     lib.programmes[0].routines[0].ex[1] = { id: '0685', catalog: 'og1', sets: 1, min: 40, note: 'Flat route',
